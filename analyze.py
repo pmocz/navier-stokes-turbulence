@@ -1,7 +1,7 @@
 import jax
 import jax.numpy as jnp
-import jax.numpy.fft as jfft
 import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 import os
 import argparse
 import orbax.checkpoint as ocp
@@ -21,12 +21,14 @@ python analye.py --res 64
 
 parser = argparse.ArgumentParser(description="Analyze Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=32, help="Grid size (default: 32)")
+parser.add_argument("--show", action="store_true", help="Show plots interactively")
 args = parser.parse_args()
 
 path = os.path.join(os.path.dirname(__file__), f"checkpoints{args.res}")
 async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
+num_checkpoints = 100
 
 # Fourier Space Variables
 L = 1.0  # Domain size
@@ -40,7 +42,10 @@ kSq = kx**2 + ky**2 + kz**2
 kSq_inv = 1.0 / kSq
 kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
 
+colors = [(1, 0, 0), (0, 0, 0)] # Red (1,0,0) to Black (0,0,0)
 
+cmap_name = 'RedToBlack'
+custom_cmap = LinearSegmentedColormap.from_list(cmap_name, colors, N=num_checkpoints)
 
 def radial_power_spectrum(data_cube, Lbox):
     """
@@ -92,7 +97,7 @@ def radial_power_spectrum(data_cube, Lbox):
 
 
 def main():
-    num_checkpoints = 100
+
     v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
     Pf_all = jnp.zeros((num_checkpoints, args.res // 2 + 1))
 
@@ -115,26 +120,27 @@ def main():
         Pf_all = Pf_all.at[i].set(Pf)
 
 
-
-
-
-
     # Plot a slice of v as an image
+    fig = plt.figure(figsize=(8, 6))
     plt.imshow(v_all[-1][:, :, v_all.shape[2] // 2], cmap="viridis")
     plt.colorbar(label="Velocity Magnitude")
-    plt.show()
+    plt.savefig(os.path.join(path, "slice.png"), dpi=200, bbox_inches="tight")
+    if args.show:
+        plt.show()
+    plt.close(fig)
 
     # Plot the radial power spectrum
-    import matplotlib.cm as cm
-    colors = cm.get_cmap('Reds', num_checkpoints)
+    fig = plt.figure(figsize=(8, 6))
     for i in range(num_checkpoints):
-      plt.plot(k, Pf_all[i], color=colors(i), label=f"Checkpoint {i+1}", alpha=0.8)
+        plt.plot(k, Pf_all[i], color=custom_cmap(i), label=f"Checkpoint {i+1}", alpha=0.8)
     plt.xlabel("Wavenumber (k)")
     plt.ylabel("Power Spectrum")
     plt.xscale("log")
     plt.yscale("log")
-    plt.show()
-
+    plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
+    if args.show:
+        plt.show()
+    plt.close(fig)
 
 if __name__ == "__main__":
     main()

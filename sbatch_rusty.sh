@@ -19,3 +19,4 @@ export PYTHONUNBUFFERED=TRUE
 source $VENVDIR/navier-stokes-turbulence-venv/bin/activate
 
 srun python navier-stokes-turbulence.py --res 512
+srun python analyze.py --res 512
