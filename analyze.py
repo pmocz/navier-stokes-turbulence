@@ -30,6 +30,7 @@ async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
 num_checkpoints = 400
+skip = 10
 
 # Fourier Space Variables
 L = 1.0  # Domain size
@@ -46,7 +47,9 @@ kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
 colors = [(1, 0, 0), (0, 0, 0)]  # Red (1,0,0) to Black (0,0,0)
 
 cmap_name = "RedToBlack"
-custom_cmap = LinearSegmentedColormap.from_list(cmap_name, colors, N=num_checkpoints)
+custom_cmap = LinearSegmentedColormap.from_list(
+    cmap_name, colors, N=num_checkpoints // skip
+)
 
 
 def radial_power_spectrum(data_cube, Lbox):
@@ -99,8 +102,8 @@ def radial_power_spectrum(data_cube, Lbox):
 
 
 def main():
-    #v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
-    Pf_all = jnp.zeros((num_checkpoints, args.res // 2 + 1))
+    # v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
+    Pf_all = jnp.zeros((num_checkpoints // skip, args.res // 2 + 1))
     target = {
         "vx": jnp.zeros((N, N, N)),
         "vy": jnp.zeros((N, N, N)),
@@ -108,9 +111,9 @@ def main():
     }
 
     start_time = time.time()
-    for i in range(num_checkpoints):
+    for i in range(num_checkpoints // skip):
         restored = async_checkpoint_manager.restore(
-            i, args=ocp.args.StandardRestore(target)
+            i * skip, args=ocp.args.StandardRestore(target)
         )
 
         vx = restored["vx"]
@@ -118,7 +121,7 @@ def main():
         vz = restored["vz"]
         v = jnp.sqrt(vx**2 + vy**2 + vz**2)
 
-        #v_all = v_all.at[i].set(v)
+        # v_all = v_all.at[i].set(v)
 
         # Calculate the radial power spectrum
         Pf_vx, k, total_power = radial_power_spectrum(vx, Lbox=L)
@@ -139,9 +142,13 @@ def main():
 
     # Plot the radial power spectrum
     fig = plt.figure(figsize=(8, 6))
-    for i in range(num_checkpoints):
+    for i in range(num_checkpoints // skip):
         plt.plot(
-            k, Pf_all[i], color=custom_cmap(i), label=f"Checkpoint {i + 1}", alpha=0.5
+            k,
+            Pf_all[i],
+            color=custom_cmap(i),
+            label=f"Checkpoint {i * skip}",
+            alpha=0.5,
         )
     plt.xlabel("Wavenumber (k)")
     plt.ylabel("Power Spectrum")
