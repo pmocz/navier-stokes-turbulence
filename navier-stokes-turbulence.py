@@ -26,7 +26,7 @@ python navier-stokes-turbulence.py --res 64
 
 # Setup parameters (user-controlled)
 parser = argparse.ArgumentParser(description="3D Navier-Stokes Simulation")
-parser.add_argument("--res", type=int, default=32, help="Grid size (default: 32)")
+parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 args = parser.parse_args()
 
 
@@ -145,7 +145,7 @@ def run_simulation_and_save_checkpoints(
     path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
-    num_checkpoints = 100
+    num_checkpoints = 400
     snap_interval = max(1, Nt // num_checkpoints)
     checkpoint_id = 0
     for i in range(0, Nt, snap_interval):
@@ -169,7 +169,7 @@ def main():
 
     print(jax.devices())
     N = args.res
-    t_end = 1.0
+    t_end = 4.0
     dt = 0.001
     nu = 0.001
 

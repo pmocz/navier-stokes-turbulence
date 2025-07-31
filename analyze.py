@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import os
 import argparse
+import time
 import orbax.checkpoint as ocp
 
 jax.config.update("jax_enable_x64", True)
@@ -20,7 +21,7 @@ python analye.py --res 64
 """
 
 parser = argparse.ArgumentParser(description="Analyze Navier-Stokes Simulation")
-parser.add_argument("--res", type=int, default=32, help="Grid size (default: 32)")
+parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 parser.add_argument("--show", action="store_true", help="Show plots interactively")
 args = parser.parse_args()
 
@@ -28,7 +29,7 @@ path = os.path.join(os.path.dirname(__file__), f"checkpoints{args.res}")
 async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
-num_checkpoints = 100
+num_checkpoints = 400
 
 # Fourier Space Variables
 L = 1.0  # Domain size
@@ -42,10 +43,11 @@ kSq = kx**2 + ky**2 + kz**2
 kSq_inv = 1.0 / kSq
 kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
 
-colors = [(1, 0, 0), (0, 0, 0)] # Red (1,0,0) to Black (0,0,0)
+colors = [(1, 0, 0), (0, 0, 0)]  # Red (1,0,0) to Black (0,0,0)
 
-cmap_name = 'RedToBlack'
+cmap_name = "RedToBlack"
 custom_cmap = LinearSegmentedColormap.from_list(cmap_name, colors, N=num_checkpoints)
+
 
 def radial_power_spectrum(data_cube, Lbox):
     """
@@ -60,23 +62,23 @@ def radial_power_spectrum(data_cube, Lbox):
 
     # Compute power spectrum
     data_cube_ft = jnp.fft.fftshift(jnp.fft.fftn(data_cube))
-    total_power = 0.5 * jnp.sum(jnp.abs(data_cube_ft)**2) / N**dim * dx**dim
-    phi_k = 0.5 * jnp.abs(data_cube_ft)**2 / N**dim * dx**dim
+    total_power = 0.5 * jnp.sum(jnp.abs(data_cube_ft) ** 2) / N**dim * dx**dim
+    phi_k = 0.5 * jnp.abs(data_cube_ft) ** 2 / N**dim * dx**dim
     half_size = N // 2 + 1
 
     # Compute radially-averaged power spectrum
-    k_cartesian = jnp.arange(-N//2, N//2)
+    k_cartesian = jnp.arange(-N // 2, N // 2)
     if dim == 2:
-        X, Y = jnp.meshgrid(k_cartesian, k_cartesian, indexing='ij')
+        X, Y = jnp.meshgrid(k_cartesian, k_cartesian, indexing="ij")
         k_rho = jnp.sqrt(X**2 + Y**2)
     else:
-        X, Y, Z = jnp.meshgrid(k_cartesian, k_cartesian, k_cartesian, indexing='ij')
+        X, Y, Z = jnp.meshgrid(k_cartesian, k_cartesian, k_cartesian, indexing="ij")
         k_rho = jnp.sqrt(X**2 + Y**2 + Z**2)
 
     k_rho = jnp.round(k_rho).astype(jnp.int32)
     Pf = []
     for r in range(half_size):
-        mask = (k_rho == r)
+        mask = k_rho == r
         vals = phi_k[mask]
         mean_val = jnp.nanmean(vals) if vals.size > 0 else 0.0
         Pf.append(mean_val)
@@ -97,18 +99,25 @@ def radial_power_spectrum(data_cube, Lbox):
 
 
 def main():
-
     v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
     Pf_all = jnp.zeros((num_checkpoints, args.res // 2 + 1))
+    target = {
+        "vx": jnp.zeros((N, N, N)),
+        "vy": jnp.zeros((N, N, N)),
+        "vz": jnp.zeros((N, N, N)),
+    }
 
+    start_time = time.time()
     for i in range(num_checkpoints):
-        restored = async_checkpoint_manager.restore(i)
+        restored = async_checkpoint_manager.restore(
+            i, args=ocp.args.StandardRestore(target)
+        )
 
         vx = restored["vx"]
         vy = restored["vy"]
         vz = restored["vz"]
         v = jnp.sqrt(vx**2 + vy**2 + vz**2)
-        
+
         v_all = v_all.at[i].set(v)
 
         # Calculate the radial power spectrum
@@ -118,7 +127,6 @@ def main():
 
         Pf = (Pf_vx + Pf_vy + Pf_vz) / 3.0
         Pf_all = Pf_all.at[i].set(Pf)
-
 
     # Plot a slice of v as an image
     fig = plt.figure(figsize=(8, 6))
@@ -132,15 +140,22 @@ def main():
     # Plot the radial power spectrum
     fig = plt.figure(figsize=(8, 6))
     for i in range(num_checkpoints):
-        plt.plot(k, Pf_all[i], color=custom_cmap(i), label=f"Checkpoint {i+1}", alpha=0.8)
+        plt.plot(
+            k, Pf_all[i], color=custom_cmap(i), label=f"Checkpoint {i + 1}", alpha=0.5
+        )
     plt.xlabel("Wavenumber (k)")
     plt.ylabel("Power Spectrum")
     plt.xscale("log")
     plt.yscale("log")
+    plt.ylim([1.0e-9, 1.0e-1])
     plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
     if args.show:
         plt.show()
     plt.close(fig)
+
+    end_time = time.time()
+    print(f"Analysis completed in {end_time - start_time:.6f} seconds")
+
 
 if __name__ == "__main__":
     main()
