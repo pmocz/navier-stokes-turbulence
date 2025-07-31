@@ -112,6 +112,8 @@ def main():
 
     start_time = time.time()
     for i in range(num_checkpoints // skip):
+        print(f"processing checkpoint {i * skip}...")
+
         restored = async_checkpoint_manager.restore(
             i * skip, args=ocp.args.StandardRestore(target)
         )
