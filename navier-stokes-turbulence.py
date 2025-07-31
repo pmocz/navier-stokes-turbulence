@@ -145,7 +145,7 @@ def run_simulation_and_save_checkpoints(
     path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
-    num_checkpoints = 400
+    num_checkpoints = 40  # 400
     snap_interval = max(1, Nt // num_checkpoints)
     checkpoint_id = 0
     for i in range(0, Nt, snap_interval):

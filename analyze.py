@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
 import os
@@ -29,7 +30,7 @@ path = os.path.join(os.path.dirname(__file__), f"checkpoints{args.res}")
 async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
-num_checkpoints = 400
+num_checkpoints = 40  # 400
 skip = 10
 
 # Fourier Space Variables
@@ -132,6 +133,15 @@ def main():
 
         Pf = (Pf_vx + Pf_vy + Pf_vz) / 3.0
         Pf_all = Pf_all.at[i].set(Pf)
+
+    # Save the results: v, k, Pf_all
+    np.savez(
+        os.path.join(path, "results.npz"),
+        v=v,
+        k=k,
+        Pf_all=Pf_all,
+        total_power=total_power,
+    )
 
     # Plot a slice of v as an image
     fig = plt.figure(figsize=(8, 6))
