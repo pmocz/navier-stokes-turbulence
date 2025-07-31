@@ -99,7 +99,7 @@ def radial_power_spectrum(data_cube, Lbox):
 
 
 def main():
-    v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
+    #v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
     Pf_all = jnp.zeros((num_checkpoints, args.res // 2 + 1))
     target = {
         "vx": jnp.zeros((N, N, N)),
@@ -118,7 +118,7 @@ def main():
         vz = restored["vz"]
         v = jnp.sqrt(vx**2 + vy**2 + vz**2)
 
-        v_all = v_all.at[i].set(v)
+        #v_all = v_all.at[i].set(v)
 
         # Calculate the radial power spectrum
         Pf_vx, k, total_power = radial_power_spectrum(vx, Lbox=L)
@@ -130,7 +130,7 @@ def main():
 
     # Plot a slice of v as an image
     fig = plt.figure(figsize=(8, 6))
-    plt.imshow(v_all[-1][:, :, v_all.shape[2] // 2], cmap="viridis")
+    plt.imshow(v[:, :, v_all.shape[2] // 2], cmap="viridis")
     plt.colorbar(label="Velocity Magnitude")
     plt.savefig(os.path.join(path, "slice.png"), dpi=200, bbox_inches="tight")
     if args.show:
