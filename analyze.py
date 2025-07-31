@@ -87,16 +87,16 @@ def radial_power_spectrum(data_cube, Lbox):
         Pf.append(mean_val)
     Pf = jnp.array(Pf)
 
-    k = 2 * jnp.pi * jnp.arange(half_size) / Lbox
+    k = 2.0 * jnp.pi * jnp.arange(half_size) / Lbox
     dk = k[1] - k[0] if half_size > 1 else 1.0
 
     Pf = Pf / dk**dim
 
     # Add geometrical factor
     if dim == 2:
-        Pf = Pf * 2 * jnp.pi * k
+        Pf = Pf * 2.0 * jnp.pi * k
     else:
-        Pf = Pf * 4 * jnp.pi * k**2
+        Pf = Pf * 4.0 * jnp.pi * k**2
 
     return Pf, k, total_power
 
