@@ -130,7 +130,7 @@ def main():
 
     # Plot a slice of v as an image
     fig = plt.figure(figsize=(8, 6))
-    plt.imshow(v[:, :, v_all.shape[2] // 2], cmap="viridis")
+    plt.imshow(v[:, :, v.shape[2] // 2], cmap="viridis")
     plt.colorbar(label="Velocity Magnitude")
     plt.savefig(os.path.join(path, "slice.png"), dpi=200, bbox_inches="tight")
     if args.show:
