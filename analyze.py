@@ -147,7 +147,7 @@ def main():
     plt.ylabel("Power Spectrum")
     plt.xscale("log")
     plt.yscale("log")
-    plt.ylim([1.0e-9, 1.0e-1])
+    plt.ylim([1.0e-11, 1.0e-1])
     plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
     if args.show:
         plt.show()
