@@ -20,7 +20,7 @@ div(v) = 0
 
 Example Usage:
 
-python navier-stokes-jax.py --res 64
+python navier-stokes-turbulence.py --res 64
 
 """
 

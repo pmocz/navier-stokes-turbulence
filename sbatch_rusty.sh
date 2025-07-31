@@ -16,6 +16,6 @@ module load python/3.11
 
 export PYTHONUNBUFFERED=TRUE
 
-source $VENVDIR/navier-stokes-jax-venv/bin/activate
+source $VENVDIR/navier-stokes-turbulence-venv/bin/activate
 
-srun python navier-stokes-jax.py --res 512
+srun python navier-stokes-turbulence.py --res 512

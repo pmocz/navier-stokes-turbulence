@@ -11,8 +11,8 @@ used the investigate the power spectrum of turbulence
 ```console
 module purge
 module load python/3.11
-python -m venv --system-site-packages $VENVDIR/navier-stokes-jax-venv
-source $VENVDIR/navier-stokes-jax-venv/bin/activate
+python -m venv --system-site-packages $VENVDIR/navier-stokes-turbulence-venv
+source $VENVDIR/navier-stokes-turbulence-venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
@@ -21,7 +21,7 @@ pip install -r requirements.txt
 ## Run Locally
 
 ```console
-python navier-stokes-jax.py
+python navier-stokes-turbulence.py
 ```
 
 
