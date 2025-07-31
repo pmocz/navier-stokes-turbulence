@@ -1,4 +1,4 @@
-# navier-stokes-jax
+# navier-stokes-turbulence
 
 Philip Mocz (2025)
 
