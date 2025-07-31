@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import argparse
+import os
 
 """
 Philip Mocz (2025), @pmocz
@@ -30,16 +31,28 @@ def summarize_results(resolutions):
     fig = plt.figure(figsize=(8, 6))
 
     for res in resolutions:
-        data = np.load(f"checkpoints{res}/results.npz")
-        k = data["k"]
-        Pf_all = data["Pf_all"]
+        results_path = f"checkpoints{res}/results.npz"
+        if os.path.exists(results_path):
+            data = np.load(results_path)
+            k = data["k"]
+            Pf_all = data["Pf_all"]
 
-        # Plot the power spectra
-        for i in range(Pf_all.shape[0]):
-            Pf = Pf_all[i]
-            plt.plot(
-                k, Pf, label=f"Resolution {res} (Checkpoint {i})", linewidth=res / 64
-            )
+            # Plot the power spectra
+            for i in range(Pf_all.shape[0]):
+                Pf = Pf_all[i]
+                color = plt.cm.viridis(i / Pf_all.shape[0])
+                plt.plot(
+                    k,
+                    Pf,
+                    label=f"Resolution {res} (Checkpoint {i})",
+                    linewidth=res / 64,
+                    color=color,
+                )
+
+    # plot a -5/3 reference line
+    k_ref = np.linspace(20, 200, 100)
+    ref_line = 0.01 * k_ref ** (-1 / 3)
+    plt.plot(k_ref, ref_line, "k--", label="-1/3", linewidth=1)
 
     plt.xlabel("Wavenumber (k)")
     plt.ylabel("Power Spectrum")

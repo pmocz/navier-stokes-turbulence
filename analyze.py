@@ -31,7 +31,7 @@ async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
 num_checkpoints = 40  # 400
-skip = 10
+skip = 8
 
 # Fourier Space Variables
 L = 1.0  # Domain size
