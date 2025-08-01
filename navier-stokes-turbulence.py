@@ -170,8 +170,8 @@ def main():
 
     print(jax.devices())
     N = args.res
-    Nt = 2000
-    dt = 0.01
+    Nt = 20000
+    dt = 0.001
     nu = 0.001
 
     assert Nt * dt > 10.0, (

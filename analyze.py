@@ -31,7 +31,7 @@ async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
 num_checkpoints = 100
-skip = 10
+skip = 20
 
 # Fourier Space Variables
 L = 2.0 * jnp.pi  # Domain size
@@ -131,7 +131,7 @@ def main():
         Pf_vy, _, _ = radial_power_spectrum(vy, Lbox=L)
         Pf_vz, _, _ = radial_power_spectrum(vz, Lbox=L)
 
-        Pf = (Pf_vx + Pf_vy + Pf_vz) / 3.0
+        Pf = Pf_vx + Pf_vy + Pf_vz
         Pf_all = Pf_all.at[i].set(Pf)
 
     # Save the results: v, k, Pf_all
@@ -164,11 +164,11 @@ def main():
             label=f"Checkpoint {i * skip}",
             alpha=0.5,
         )
-    plt.xlabel("Wavenumber (k)")
-    plt.ylabel("Power Spectrum")
+    plt.xlabel("wavenumber (k)")
+    plt.ylabel("velocity power spectrum")
     plt.xscale("log")
     plt.yscale("log")
-    plt.ylim([1.0e-5, 1.0e1])
+    plt.ylim([1.0e-3, 5.0e1])
     plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
     if args.show:
         plt.show()
