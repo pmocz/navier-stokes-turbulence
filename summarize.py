@@ -51,15 +51,15 @@ def summarize_results(resolutions):
 
     # plot a -5/3 reference line
     k_ref = np.linspace(20, 200, 100)
-    ref_line = 0.01 * k_ref ** (-1 / 3)
-    plt.plot(k_ref, ref_line, "k--", label="-1/3", linewidth=1)
+    ref_line = 1.0 * k_ref ** (-5 / 3)
+    plt.plot(k_ref, ref_line, "k--", label="-5/3", linewidth=1)
 
     plt.xlabel("Wavenumber (k)")
     plt.ylabel("Power Spectrum")
     plt.xscale("log")
     plt.yscale("log")
     plt.ylim([1.0e-11, 1.0e-1])
-    plt.savefig("summary.png")
+    plt.savefig("pspec.png")
     if args.show:
         plt.show()
     plt.close(fig)
