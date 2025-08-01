@@ -30,11 +30,11 @@ path = os.path.join(os.path.dirname(__file__), f"checkpoints{args.res}")
 async_checkpoint_manager = ocp.CheckpointManager(path)
 
 N = args.res
-num_checkpoints = 40  # 400
-skip = 8
+num_checkpoints = 100
+skip = 10
 
 # Fourier Space Variables
-L = 1.0  # Domain size
+L = 2.0 * jnp.pi  # Domain size
 klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
 kmax = jnp.max(klin)
 kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
@@ -146,6 +146,8 @@ def main():
     # Plot a slice of v as an image
     fig = plt.figure(figsize=(8, 6))
     plt.imshow(v[:, :, v.shape[2] // 2], cmap="viridis")
+    # plt.imshow(vx[:, :, v.shape[2] // 2], cmap="viridis")
+    # plt.clim(-1, 1)
     plt.colorbar(label="Velocity Magnitude")
     plt.savefig(os.path.join(path, "slice.png"), dpi=200, bbox_inches="tight")
     if args.show:
@@ -166,7 +168,7 @@ def main():
     plt.ylabel("Power Spectrum")
     plt.xscale("log")
     plt.yscale("log")
-    plt.ylim([1.0e-11, 1.0e-1])
+    plt.ylim([1.0e-5, 1.0e1])
     plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
     if args.show:
         plt.show()

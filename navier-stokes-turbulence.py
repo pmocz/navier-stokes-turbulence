@@ -146,7 +146,7 @@ def run_simulation_and_save_checkpoints(
     path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
-    num_checkpoints = 40  # 400
+    num_checkpoints = 100
     snap_interval = max(1, Nt // num_checkpoints)
     checkpoint_id = 0
     for i in range(0, Nt, snap_interval):
@@ -170,12 +170,16 @@ def main():
 
     print(jax.devices())
     N = args.res
-    t_end = 4.0
-    dt = 0.001
+    Nt = 2000
+    dt = 0.01
     nu = 0.001
 
+    assert Nt * dt > 10.0, (
+        "Simulation should be run long enough for turbulence to develop"
+    )
+
     # Domain [0,1]^3
-    L = 1.0
+    L = 2.0 * jnp.pi
     # dx = L / N
     xlin = jnp.linspace(0, L, num=N + 1)
     xlin = xlin[0:N]
@@ -199,18 +203,22 @@ def main():
         & (jnp.abs(kz) < (2.0 / 3.0) * kmax)
     )
 
-    Nt = int(jnp.ceil(t_end / dt))
-
     # Initial Condition (simple vortex, divergence free)
     # vx = -jnp.cos(2.0 * jnp.pi * yy) * jnp.cos(2.0 * jnp.pi * zz)
     # vy = jnp.cos(2.0 * jnp.pi * xx) * jnp.cos(2.0 * jnp.pi * zz)
     # vz = jnp.cos(2.0 * jnp.pi * xx) * jnp.cos(2.0 * jnp.pi * yy)
-    Ax = jnp.cos(2.0 * jnp.pi * xx) * jnp.sin(2.0 * jnp.pi * yy) / (2.0 * jnp.pi)
-    Ay = -jnp.cos(2.0 * jnp.pi * yy) * jnp.sin(2.0 * jnp.pi * zz) / (2.0 * jnp.pi)
-    Az = jnp.cos(2.0 * jnp.pi * zz) * jnp.sin(2.0 * jnp.pi * xx) / (2.0 * jnp.pi)
+    # Ax = jnp.cos(2.0 * jnp.pi * xx) * jnp.sin(2.0 * jnp.pi * yy) / (2.0 * jnp.pi)
+    # Ay = -jnp.cos(2.0 * jnp.pi * yy) * jnp.sin(2.0 * jnp.pi * zz) / (2.0 * jnp.pi)
+    # Az = jnp.cos(2.0 * jnp.pi * zz) * jnp.sin(2.0 * jnp.pi * xx) / (2.0 * jnp.pi)
+    # del xx, yy, zz  # clear meshgrid to save memory
+    # vx, vy, vz = curl(Ax, Ay, Az, kx, ky, kz)
+    # del Ax, Ay, Az  # clear initial condition variables to save memory
+
+    # Taylor-Green vortex initial condition
+    vx = jnp.sin(xx) * jnp.cos(yy) * jnp.cos(zz)
+    vy = -jnp.cos(xx) * jnp.sin(yy) * jnp.cos(zz)
+    vz = jnp.zeros_like(vx)
     del xx, yy, zz  # clear meshgrid to save memory
-    vx, vy, vz = curl(Ax, Ay, Az, kx, ky, kz)
-    del Ax, Ay, Az  # clear initial condition variables to save memory
 
     # check the divergence of the initial condition
     div_v = div(vx, vy, vz, kx, ky, kz)
