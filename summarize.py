@@ -58,7 +58,7 @@ def summarize_results(resolutions):
     plt.ylabel("velocity power spectrum")
     plt.xscale("log")
     plt.yscale("log")
-    plt.ylim([1.0e-3, 5.0e1])
+    plt.ylim([1.0e-4, 5.0e1])
     plt.savefig("pspec.png")
     if args.show:
         plt.show()

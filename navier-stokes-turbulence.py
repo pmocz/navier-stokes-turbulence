@@ -149,6 +149,7 @@ def run_simulation_and_save_checkpoints(
     num_checkpoints = 100
     snap_interval = max(1, Nt // num_checkpoints)
     checkpoint_id = 0
+    time_start = time.time()
     for i in range(0, Nt, snap_interval):
         steps = min(snap_interval, Nt - i)
         vx, vy, vz = run_simulation(
@@ -161,6 +162,14 @@ def run_simulation_and_save_checkpoints(
         async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
         async_checkpoint_manager.wait_until_finished()
         checkpoint_id += 1
+        print(
+            "estimated time remaining: {:.2f} minutes".format(
+                (time.time() - time_start)
+                * (Nt - (i + snap_interval))
+                / (i + snap_interval)
+                / 60.0
+            )
+        )
 
     return vx, vy, vz
 
@@ -170,9 +179,9 @@ def main():
 
     print(jax.devices())
     N = args.res
-    Nt = 20000
+    Nt = 32000
     dt = 0.001
-    nu = 0.001
+    nu = 0.0005
 
     assert Nt * dt > 10.0, (
         "Simulation should be run long enough for turbulence to develop"

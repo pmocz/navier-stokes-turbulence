@@ -168,7 +168,7 @@ def main():
     plt.ylabel("velocity power spectrum")
     plt.xscale("log")
     plt.yscale("log")
-    plt.ylim([1.0e-3, 5.0e1])
+    plt.ylim([1.0e-4, 5.0e1])
     plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
     if args.show:
         plt.show()
