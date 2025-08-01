@@ -1,6 +1,7 @@
 checkpoints*
 *~
 .DS_Store
+extras/
 slurm*
 memory.prof
 pspec.png
