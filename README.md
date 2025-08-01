@@ -10,7 +10,7 @@ resulting from the Taylor-Green vortex
 in a 3D periodic box.
 
 
-## Virtual Environment
+## Virtual environment
 
 ```console
 module purge
@@ -22,14 +22,14 @@ pip install -r requirements.txt
 ```
 
 
-## Run Locally
+## Run locally
 
 ```console
 python navier-stokes-turbulence.py
 ```
 
 
-## Submit job (Rusty)
+## Submit job (to Rusty)
 
 ```console
 sbatch sbatch_rusty.sh
@@ -47,6 +47,6 @@ python analyze.py --res 64
 python summarize.py --res 64
 ```
 
-results in the following plot:
+creates the following plot:
 
 ![Velocity Power Spectrum](pspec.png)
