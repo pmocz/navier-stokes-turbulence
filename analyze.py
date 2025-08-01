@@ -1,5 +1,6 @@
 import jax
 import jax.numpy as jnp
+import jax.numpy.fft as jfft
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.colors import LinearSegmentedColormap
@@ -38,19 +39,33 @@ L = 2.0 * jnp.pi  # Domain size
 klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
 kmax = jnp.max(klin)
 kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
-kx = jnp.fft.ifftshift(kx)
-ky = jnp.fft.ifftshift(ky)
-kz = jnp.fft.ifftshift(kz)
+kx = jfft.ifftshift(kx)
+ky = jfft.ifftshift(ky)
+kz = jfft.ifftshift(kz)
 kSq = kx**2 + ky**2 + kz**2
 kSq_inv = 1.0 / kSq
 kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
 
-colors = [(1, 0, 0), (0, 0, 0)]  # Red (1,0,0) to Black (0,0,0)
+colors = [(0, 0, 0), (1, 0, 0)]  # Black (0,0,0) to Red (1,0,0)
 
-cmap_name = "RedToBlack"
+cmap_name = "BlackToRed"
 custom_cmap = LinearSegmentedColormap.from_list(
     cmap_name, colors, N=num_checkpoints // skip
 )
+
+
+def curl(vx, vy, vz, kx, ky, kz):
+    """return curl of (vx,vy,vz) as (wx, wy, wz)"""
+    dvy_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vy)))
+    dvz_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vz)))
+    dvz_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vz)))
+    dvx_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vx)))
+    dvx_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vx)))
+    dvy_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vy)))
+    wx = dvy_z - dvz_y
+    wy = dvz_x - dvx_z
+    wz = dvx_y - dvy_x
+    return wx, wy, wz
 
 
 def radial_power_spectrum(data_cube, Lbox):
@@ -65,7 +80,7 @@ def radial_power_spectrum(data_cube, Lbox):
     dx = Lbox / N
 
     # Compute power spectrum
-    data_cube_ft = jnp.fft.fftshift(jnp.fft.fftn(data_cube))
+    data_cube_ft = jfft.fftshift(jfft.fftn(data_cube))
     total_power = 0.5 * jnp.sum(jnp.abs(data_cube_ft) ** 2) / N**dim * dx**dim
     phi_k = 0.5 * jnp.abs(data_cube_ft) ** 2 / N**dim * dx**dim
     half_size = N // 2 + 1
@@ -124,6 +139,9 @@ def main():
         vz = restored["vz"]
         v = jnp.sqrt(vx**2 + vy**2 + vz**2)
 
+        wx, wy, wz = curl(vx, vy, vz, kx, ky, kz)
+        w = jnp.sqrt(wx**2 + wy**2 + wz**2)
+
         # v_all = v_all.at[i].set(v)
 
         # Calculate the radial power spectrum
@@ -138,6 +156,7 @@ def main():
     np.savez(
         os.path.join(path, "results.npz"),
         v=v,
+        w=w,
         k=k,
         Pf_all=Pf_all,
         total_power=total_power,
@@ -148,8 +167,17 @@ def main():
     plt.imshow(v[:, :, v.shape[2] // 2], cmap="viridis")
     # plt.imshow(vx[:, :, v.shape[2] // 2], cmap="viridis")
     # plt.clim(-1, 1)
-    plt.colorbar(label="Velocity Magnitude")
-    plt.savefig(os.path.join(path, "slice.png"), dpi=200, bbox_inches="tight")
+    plt.colorbar(label="velocity magnitude")
+    plt.savefig(os.path.join(path, "slice_v.png"), dpi=200, bbox_inches="tight")
+    if args.show:
+        plt.show()
+    plt.close(fig)
+
+    # Plot a slice of w as an image
+    fig = plt.figure(figsize=(8, 6))
+    plt.imshow(w[:, :, w.shape[2] // 2], cmap="viridis")
+    plt.colorbar(label="velocity magnitude")
+    plt.savefig(os.path.join(path, "slice_w.png"), dpi=200, bbox_inches="tight")
     if args.show:
         plt.show()
     plt.close(fig)
@@ -168,6 +196,7 @@ def main():
     plt.ylabel("velocity power spectrum")
     plt.xscale("log")
     plt.yscale("log")
+    plt.xlim([1.0, 1024.0])
     plt.ylim([1.0e-4, 5.0e1])
     plt.savefig(os.path.join(path, "power_spectrum.png"), dpi=200, bbox_inches="tight")
     if args.show:

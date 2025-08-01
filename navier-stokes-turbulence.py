@@ -181,7 +181,7 @@ def main():
     N = args.res
     Nt = 32000
     dt = 0.001
-    nu = 0.0005
+    nu = 1.0 / 1600.0
 
     print(f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}")
 
@@ -198,9 +198,9 @@ def main():
     klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
     kmax = jnp.max(klin)
     kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
-    kx = jnp.fft.ifftshift(kx)
-    ky = jnp.fft.ifftshift(ky)
-    kz = jnp.fft.ifftshift(kz)
+    kx = jfft.ifftshift(kx)
+    ky = jfft.ifftshift(ky)
+    kz = jfft.ifftshift(kz)
     kSq = kx**2 + ky**2 + kz**2
     kSq_inv = 1.0 / kSq
     kSq_inv = kSq_inv.at[kSq == 0].set(1.0)

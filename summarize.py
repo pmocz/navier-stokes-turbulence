@@ -65,6 +65,7 @@ def summarize_results(resolutions):
     plt.xscale("log")
     plt.yscale("log")
     plt.legend(loc="upper right")
+    plt.xlim([1.0, 1024.0])
     plt.ylim([1.0e-4, 5.0e1])
     plt.savefig("pspec.png")
     if args.show:
