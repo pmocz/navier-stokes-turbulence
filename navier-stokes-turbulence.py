@@ -183,6 +183,8 @@ def main():
     dt = 0.001
     nu = 0.0005
 
+    print(f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}")
+
     assert Nt * dt > 10.0, (
         "Simulation should be run long enough for turbulence to develop"
     )
