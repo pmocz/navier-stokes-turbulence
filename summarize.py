@@ -67,7 +67,7 @@ def summarize_results(resolutions):
 
 if __name__ == "__main__":
     # Define the resolutions to summarize
-    resolutions = [32, 64, 128]  # Add more resolutions as needed
+    resolutions = [32, 64, 128, 256, 512, 1024]  # Add more resolutions as needed
 
     # Call the summarization function
     summarize_results(resolutions)
