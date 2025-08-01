@@ -6,6 +6,7 @@ import os
 import argparse
 import time
 import orbax.checkpoint as ocp
+# import jax.profiler
 
 jax.config.update("jax_enable_x64", True)
 
@@ -207,12 +208,15 @@ def main():
     Ax = jnp.cos(2.0 * jnp.pi * xx) * jnp.sin(2.0 * jnp.pi * yy) / (2.0 * jnp.pi)
     Ay = -jnp.cos(2.0 * jnp.pi * yy) * jnp.sin(2.0 * jnp.pi * zz) / (2.0 * jnp.pi)
     Az = jnp.cos(2.0 * jnp.pi * zz) * jnp.sin(2.0 * jnp.pi * xx) / (2.0 * jnp.pi)
+    del xx, yy, zz  # clear meshgrid to save memory
     vx, vy, vz = curl(Ax, Ay, Az, kx, ky, kz)
+    del Ax, Ay, Az  # clear initial condition variables to save memory
 
     # check the divergence of the initial condition
     div_v = div(vx, vy, vz, kx, ky, kz)
     div_error = jnp.max(jnp.abs(div_v))
     assert div_error < 1e-8, f"Initial divergence is too large: {div_error:.6e}"
+    del div_v
 
     # Run the simulation
     start_time = time.time()
@@ -232,6 +236,7 @@ def main():
         f"checkpoints{N}",
     )
     jax.block_until_ready(state)
+    # jax.profiler.save_device_memory_profile("memory.prof") # for memory profiling
     end_time = time.time()
     print(f"Simulation completed in {end_time - start_time:.6f} seconds")
 
