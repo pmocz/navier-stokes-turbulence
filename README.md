@@ -5,7 +5,7 @@ Philip Mocz (2025)
 Flatiron Institute
 
 A simple Navier-Stokes solver in JAX
-used the investigate the power spectrum of turbulence
+used to investigate the velocity power spectrum of turbulence
 resulting from the Taylor-Green vortex
 in a 3D periodic box.
 
