@@ -2,8 +2,12 @@
 
 Philip Mocz (2025)
 
+Flatiron Institute
+
 A simple Navier-Stokes solver in JAX
 used the investigate the power spectrum of turbulence
+resulting from the Taylor-Green vortex
+in a 3D periodic box.
 
 
 ## Virtual Environment
@@ -34,5 +38,11 @@ sbatch sbatch_rusty.sh
 ## Analyze results
 
 ```console
-python analyze.py
+python analyze.py --res 64
+```
+
+## Summarize results from multiple runs
+
+```console
+python summarize.py --res 64
 ```

@@ -17,7 +17,7 @@ Read and analyze the results of a 3D Navier-Stokes simulation.
 
 Example Usage:
 
-python analye.py --res 64
+python analyze.py --res 64
 
 """
 
