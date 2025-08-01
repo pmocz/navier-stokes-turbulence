@@ -45,7 +45,7 @@ def summarize_results(resolutions):
         Nsnap = Pf_all.shape[0]
         for i in range(Nsnap):
             Pf = Pf_all[i]
-            color = plt.cm.viridis(i / Nsnap)
+            color = plt.cm.turbo(i / Nsnap)
             label = f"res={res}$^3$" if i == Nsnap - 1 else None
             plt.plot(
                 k,

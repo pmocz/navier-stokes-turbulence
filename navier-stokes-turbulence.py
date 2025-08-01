@@ -185,9 +185,7 @@ def main():
 
     print(f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}")
 
-    assert Nt * dt > 10.0, (
-        "Simulation should be run long enough for turbulence to develop"
-    )
+    assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
 
     # Domain [0,1]^3
     L = 2.0 * jnp.pi
