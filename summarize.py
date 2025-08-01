@@ -30,24 +30,28 @@ def summarize_results(resolutions):
     """
     fig = plt.figure(figsize=(8, 6))
 
-    for res in resolutions:
-        results_path = f"checkpoints{res}/results.npz"
-        if os.path.exists(results_path):
-            data = np.load(results_path)
-            k = data["k"]
-            Pf_all = data["Pf_all"]
+    # Find the maximum resolution for which results exist
+    existing_res = [res for res in resolutions if os.path.exists(f"checkpoints{res}/results.npz")]
 
-            # Plot the power spectra
-            for i in range(Pf_all.shape[0]):
-                Pf = Pf_all[i]
-                color = plt.cm.viridis(i / Pf_all.shape[0])
-                plt.plot(
-                    k,
-                    Pf,
-                    label=f"Resolution {res} (Checkpoint {i})",
-                    linewidth=res / 64,
-                    color=color,
-                )
+    for res in existing_res:
+        results_path = f"checkpoints{res}/results.npz"
+        data = np.load(results_path)
+        k = data["k"]
+        Pf_all = data["Pf_all"]
+
+        # Plot the power spectra
+        Nsnap = Pf_all.shape[0]
+        for i in range(Nsnap):
+            Pf = Pf_all[i]
+            color = plt.cm.viridis(i / Nsnap)
+            label = f"res={res}$^3$" if i == Nsnap - 1 else None
+            plt.plot(
+                k,
+                Pf,
+                label=label,
+                linewidth=res / 64,
+                color=color,
+            )
 
     # plot a -5/3 reference line
     k_ref = np.linspace(2, 256, 100)
@@ -58,6 +62,7 @@ def summarize_results(resolutions):
     plt.ylabel("velocity power spectrum")
     plt.xscale("log")
     plt.yscale("log")
+    plt.legend(loc="upper right")
     plt.ylim([1.0e-4, 5.0e1])
     plt.savefig("pspec.png")
     if args.show:
