@@ -53,7 +53,7 @@ def summarize_results(resolutions):
     k_ref = np.linspace(2, 256, 100)
     ref_line = 50.0 * k_ref ** (-5 / 3)
     plt.plot(k_ref, ref_line, "k--", label="-5/3", linewidth=1)
-
+    plt.title("Velocity Power Spectrum as a function of resolution and time")
     plt.xlabel("wavenumber (k)")
     plt.ylabel("velocity power spectrum")
     plt.xscale("log")

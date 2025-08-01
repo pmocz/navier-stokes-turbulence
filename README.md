@@ -46,3 +46,7 @@ python analyze.py --res 64
 ```console
 python summarize.py --res 64
 ```
+
+results in the following plot:
+
+![Velocity Power Spectrum](pspec.png)
