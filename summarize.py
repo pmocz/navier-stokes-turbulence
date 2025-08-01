@@ -31,7 +31,9 @@ def summarize_results(resolutions):
     fig = plt.figure(figsize=(8, 6))
 
     # Find the maximum resolution for which results exist
-    existing_res = [res for res in resolutions if os.path.exists(f"checkpoints{res}/results.npz")]
+    existing_res = [
+        res for res in resolutions if os.path.exists(f"checkpoints{res}/results.npz")
+    ]
 
     for res in existing_res:
         results_path = f"checkpoints{res}/results.npz"
