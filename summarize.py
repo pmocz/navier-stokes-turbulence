@@ -51,7 +51,7 @@ def summarize_results(resolutions):
                 k,
                 Pf,
                 label=label,
-                linewidth=res / 64,
+                linewidth=0.5 + res / 256,
                 color=color,
             )
 
@@ -65,7 +65,7 @@ def summarize_results(resolutions):
     plt.xscale("log")
     plt.yscale("log")
     plt.legend(loc="upper right")
-    plt.xlim([1.0, 1024.0])
+    plt.xlim([1.0, 512.0])
     plt.ylim([1.0e-4, 5.0e1])
     plt.savefig("pspec.png")
     if args.show:
