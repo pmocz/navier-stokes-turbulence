@@ -6,6 +6,8 @@ import os
 import argparse
 import time
 import orbax.checkpoint as ocp
+from jax.experimental import mesh_utils
+from jax.sharding import Mesh, PartitionSpec, NamedSharding
 # import jax.profiler
 
 jax.config.update("jax_enable_x64", True)
@@ -39,7 +41,43 @@ parser.add_argument(
     action="store_true",
     help="Disable 4th-order Runge-Kutta time integration (default: False, use RK4 by default)",
 )
+parser.add_argument(
+    "--cpu-only",
+    action="store_true",
+    help="Use CPU only (default: False, use GPU if available)",
+)
 args = parser.parse_args()
+
+# Setup distributed computing
+if args.cpu_only:
+    flags = os.environ.get("XLA_FLAGS", "")
+    flags += " --xla_force_host_platform_device_count=1"  # change to, e.g., 8 for testing sharding virtually
+    os.environ["CUDA_VISIBLE_DEVICES"] = ""
+    os.environ["XLA_FLAGS"] = flags
+    print("Using CPU only mode")
+else:
+    print("Using GPU distributed mode")
+    jax.distributed.initialize()
+
+# Create mesh and sharding for distributed computation
+n_devices = jax.device_count()
+mesh = Mesh(mesh_utils.create_device_mesh((n_devices, 1, 1)), ("x", "y", "z"))
+sharding = NamedSharding(mesh, PartitionSpec("x", "y", "z"))
+
+if jax.process_index() == 0:
+    for env_var in [
+        "SLURM_JOB_ID",
+        "SLURM_NTASKS",
+        "SLURM_NODELIST",
+        "SLURM_STEP_NODELIST",
+        "SLURM_STEP_GPUS",
+        "SLURM_GPUS",
+    ]:
+        print(f"{env_var}: {os.getenv(env_var, '')}")
+    print("Total number of processes: ", jax.process_count())
+    print("Total number of devices: ", jax.device_count())
+    print("List of devices: ", jax.devices())
+    print("Number of devices on this process: ", jax.local_device_count())
 
 
 def poisson_solve(rho, kSq_inv):
@@ -330,14 +368,15 @@ def run_simulation_and_save_checkpoints(
         async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
         async_checkpoint_manager.wait_until_finished()
         checkpoint_id += 1
-        print(
-            "estimated time remaining: {:.2f} minutes".format(
-                (time.time() - time_start)
-                * (Nt - (i + snap_interval))
-                / (i + snap_interval)
-                / 60.0
+        if jax.process_index() == 0:
+            print(
+                "estimated time remaining: {:.2f} minutes".format(
+                    (time.time() - time_start)
+                    * (Nt - (i + snap_interval))
+                    / (i + snap_interval)
+                    / 60.0
+                )
             )
-        )
 
     return vx, vy, vz
 
@@ -345,16 +384,18 @@ def run_simulation_and_save_checkpoints(
 def main():
     """3D Navier-Stokes Simulation"""
 
-    print(jax.devices())
     N = args.res
     Nt = 32000
     dt = 0.001
     nu = 1.0 / 1600.0
 
-    print(f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}")
-    print(
-        f"using {'4th-order Runge-Kutta' if not args.no_rk4 else 'backwards Euler'} method"
-    )
+    if jax.process_index() == 0:
+        print(
+            f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}"
+        )
+        print(
+            f"using {'4th-order Runge-Kutta' if not args.no_rk4 else 'backwards Euler'} method"
+        )
 
     # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
 
@@ -365,6 +406,11 @@ def main():
     xlin = xlin[0:N]
     xx, yy, zz = jnp.meshgrid(xlin, xlin, xlin, indexing="ij")
 
+    # Apply sharding to meshgrid arrays
+    xx = jax.lax.with_sharding_constraint(xx, sharding)
+    yy = jax.lax.with_sharding_constraint(yy, sharding)
+    zz = jax.lax.with_sharding_constraint(zz, sharding)
+
     # Fourier Space Variables
     klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
     kmax = jnp.max(klin)
@@ -372,6 +418,9 @@ def main():
     kx = jfft.ifftshift(kx)
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
+    kx = jax.lax.with_sharding_constraint(kx, sharding)
+    ky = jax.lax.with_sharding_constraint(ky, sharding)
+    kz = jax.lax.with_sharding_constraint(kz, sharding)
     kSq = kx**2 + ky**2 + kz**2
     kSq_inv = 1.0 / kSq
     kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
@@ -398,6 +447,15 @@ def main():
     vx = jnp.sin(xx) * jnp.cos(yy) * jnp.cos(zz)
     vy = -jnp.cos(xx) * jnp.sin(yy) * jnp.cos(zz)
     vz = jnp.zeros_like(vx)
+
+    if jax.process_index() == 0:
+        print("xx:")
+        print(f"  Shape: {xx.shape}")
+        print(f"  Sharding: {xx.sharding}")
+        print("vx:")
+        print(f"  Shape: {vx.shape}")
+        print(f"  Sharding: {vx.sharding}")
+
     del xx, yy, zz  # clear meshgrid to save memory
 
     # check the divergence of the initial condition
@@ -427,7 +485,8 @@ def main():
     jax.block_until_ready(state)
     # jax.profiler.save_device_memory_profile("memory.prof") # for memory profiling
     end_time = time.time()
-    print(f"Simulation completed in {end_time - start_time:.6f} seconds")
+    if jax.process_index() == 0:
+        print(f"Simulation completed in {end_time - start_time:.6f} seconds")
 
 
 if __name__ == "__main__":
