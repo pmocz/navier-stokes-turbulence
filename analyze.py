@@ -54,7 +54,8 @@ custom_cmap = LinearSegmentedColormap.from_list(
 )
 
 
-def curl(vx, vy, vz, kx, ky, kz):
+@jax.jit
+def curl(vx, vy, vz):
     """return curl of (vx,vy,vz) as (wx, wy, wz)"""
     dvy_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vy)))
     dvz_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vz)))
@@ -68,6 +69,7 @@ def curl(vx, vy, vz, kx, ky, kz):
     return wx, wy, wz
 
 
+@jax.jit
 def radial_power_spectrum(data_cube, Lbox):
     """
     Computes radially averaged power spectral density of data_cube (2D or 3D).
@@ -95,16 +97,15 @@ def radial_power_spectrum(data_cube, Lbox):
         k_rho = jnp.sqrt(X**2 + Y**2 + Z**2)
 
     k_rho = jnp.round(k_rho).astype(jnp.int32)
-    Pf = []
+    Pf = jnp.zeros(half_size)
     for r in range(half_size):
         mask = k_rho == r
-        vals = phi_k[mask]
-        mean_val = jnp.nanmean(vals) if vals.size > 0 else 0.0
-        Pf.append(mean_val)
-    Pf = jnp.array(Pf)
+        vals = jnp.where(mask, phi_k, jnp.nan)
+        mean_val = jnp.nanmean(vals)
+        Pf = Pf.at[r].set(mean_val)
 
     k = 2.0 * jnp.pi * jnp.arange(half_size) / Lbox
-    dk = k[1] - k[0] if half_size > 1 else 1.0
+    dk = k[1] - k[0]
 
     Pf = Pf / dk**dim
 
@@ -139,7 +140,7 @@ def main():
         vz = restored["vz"]
         v = jnp.sqrt(vx**2 + vy**2 + vz**2)
 
-        wx, wy, wz = curl(vx, vy, vz, kx, ky, kz)
+        wx, wy, wz = curl(vx, vy, vz)
         w = jnp.sqrt(wx**2 + wy**2 + wz**2)
 
         # v_all = v_all.at[i].set(v)
