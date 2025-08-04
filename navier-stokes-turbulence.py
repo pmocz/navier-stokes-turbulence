@@ -464,7 +464,7 @@ def main():
     if jax.process_index() == 0:
         print("vz:")
         print(f"  Shape: {vz.shape}")
-        print(f"  Sharding: {v.sharding}")
+        print(f"  Sharding: {vz.sharding}")
 
     del xx, yy, zz  # clear meshgrid to save memory
 
