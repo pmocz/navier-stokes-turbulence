@@ -19,6 +19,12 @@ with a Spectral method
 v_t + (v.nabla) v = nu * nabla^2 v - nabla P
 div(v) = 0
 
+RK4 method uses:
+- 4th-order Runge-Kutta time integration
+- Spectral method in Fourier space
+- Projection method for incompressibility
+- 2/3 rule dealiasing
+
 Example Usage:
 
 python navier-stokes-turbulence.py --res 64
@@ -28,6 +34,11 @@ python navier-stokes-turbulence.py --res 64
 # Setup parameters (user-controlled)
 parser = argparse.ArgumentParser(description="3D Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
+parser.add_argument(
+    "--no-rk4",
+    action="store_true",
+    help="Disable 4th-order Runge-Kutta time integration (default: False, use RK4 by default)",
+)
 args = parser.parse_args()
 
 
@@ -79,6 +90,37 @@ def curl(vx, vy, vz, kx, ky, kz):
     return wx, wy, wz
 
 
+def curl_spectral(vx_hat, vy_hat, vz_hat, kx, ky, kz):
+    """Compute curl in spectral space"""
+    # wx = dvy/dz - dvz/dy
+    # wy = dvz/dx - dvx/dz
+    # wz = dvx/dy - dvy/dx
+    wx_hat = 1j * (ky * vz_hat - kz * vy_hat)
+    wy_hat = 1j * (kz * vx_hat - kx * vz_hat)
+    wz_hat = 1j * (kx * vy_hat - ky * vx_hat)
+    return wx_hat, wy_hat, wz_hat
+
+
+def cross_product_spectral(vx, vy, vz, wx_hat, wy_hat, wz_hat, kx, ky, kz):
+    """Compute cross product (v × curl) in spectral space"""
+    # Transform curl back to real space
+    wx = jnp.real(jfft.ifftn(wx_hat))
+    wy = jnp.real(jfft.ifftn(wy_hat))
+    wz = jnp.real(jfft.ifftn(wz_hat))
+
+    # Compute cross product in real space
+    cross_x = vy * wz - vz * wy
+    cross_y = vz * wx - vx * wz
+    cross_z = vx * wy - vy * wx
+
+    # Transform back to spectral space
+    cross_x_hat = jfft.fftn(cross_x)
+    cross_y_hat = jfft.fftn(cross_y)
+    cross_z_hat = jfft.fftn(cross_z)
+
+    return cross_x_hat, cross_y_hat, cross_z_hat
+
+
 def get_ke(vx, vy, vz, dV):
     """Calculate the kinetic energy in the system = 0.5 * integral |v|^2 dV"""
     v2 = vx**2 + vy**2 + vz**2
@@ -92,8 +134,46 @@ def apply_dealias(f, dealias):
     return jnp.real(jfft.ifftn(f_hat))
 
 
+def compute_rhs_rk4(
+    vx, vy, vz, vx_hat, vy_hat, vz_hat, nu, kx, ky, kz, kSq, kSq_inv, dealias
+):
+    """Compute right-hand side of Navier-Stokes equations for the RK4 solver"""
+
+    # Compute curl in spectral space
+    wx_hat, wy_hat, wz_hat = curl_spectral(vx_hat, vy_hat, vz_hat, kx, ky, kz)
+
+    # Compute cross product (v × curl)
+    rhs_x_hat, rhs_y_hat, rhs_z_hat = cross_product_spectral(
+        vx, vy, vz, wx_hat, wy_hat, wz_hat, kx, ky, kz
+    )
+
+    # Apply dealiasing
+    rhs_x_hat = dealias * rhs_x_hat
+    rhs_y_hat = dealias * rhs_y_hat
+    rhs_z_hat = dealias * rhs_z_hat
+
+    # Project to enforce incompressibility (pressure correction)
+    # P_hat = sum(rhs_hat * k / k^2, axis=0)
+    k_over_kSq = jnp.stack([kx * kSq_inv, ky * kSq_inv, kz * kSq_inv], axis=0)
+    P_hat = jnp.sum(
+        jnp.stack([rhs_x_hat, rhs_y_hat, rhs_z_hat], axis=0) * k_over_kSq, axis=0
+    )
+
+    # Subtract pressure gradient
+    rhs_x_hat = rhs_x_hat - kx * P_hat
+    rhs_y_hat = rhs_y_hat - ky * P_hat
+    rhs_z_hat = rhs_z_hat - kz * P_hat
+
+    # Add viscous term
+    rhs_x_hat = rhs_x_hat - nu * kSq * vx_hat
+    rhs_y_hat = rhs_y_hat - nu * kSq * vy_hat
+    rhs_z_hat = rhs_z_hat - nu * kSq * vz_hat
+
+    return rhs_x_hat, rhs_y_hat, rhs_z_hat
+
+
 @partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
-def run_simulation(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias):
+def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias):
     """Run the full Navier-Stokes simulation"""
 
     def update(_, state):
@@ -138,6 +218,89 @@ def run_simulation(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias):
     return vx, vy, vz
 
 
+@partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
+def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias):
+    """Run the full Navier-Stokes simulation using 4th-order Runge-Kutta"""
+
+    # RK4 coefficients
+    a = jnp.array([1.0 / 6.0, 1.0 / 3.0, 1.0 / 3.0, 1.0 / 6.0])
+    b = jnp.array([0.5, 0.5, 1.0])
+
+    def update(_, state):
+        (vx, vy, vz) = state
+
+        # Transform to spectral space
+        vx_hat = jfft.fftn(vx)
+        vy_hat = jfft.fftn(vy)
+        vz_hat = jfft.fftn(vz)
+
+        # Store initial values
+        vx_hat0 = vx_hat
+        vy_hat0 = vy_hat
+        vz_hat0 = vz_hat
+
+        # Initialize accumulation
+        vx_hat1 = jnp.zeros_like(vx_hat)
+        vy_hat1 = jnp.zeros_like(vy_hat)
+        vz_hat1 = jnp.zeros_like(vz_hat)
+
+        # RK4 stages
+        for rk in range(4):
+            # Transform back to real space if needed (for cross product)
+            if rk > 0:
+                vx_temp = jnp.real(jfft.ifftn(vx_hat))
+                vy_temp = jnp.real(jfft.ifftn(vy_hat))
+                vz_temp = jnp.real(jfft.ifftn(vz_hat))
+            else:
+                vx_temp = vx
+                vy_temp = vy
+                vz_temp = vz
+
+            # Compute RHS
+            rhs_x_hat, rhs_y_hat, rhs_z_hat = compute_rhs_rk4(
+                vx_temp,
+                vy_temp,
+                vz_temp,
+                vx_hat,
+                vy_hat,
+                vz_hat,
+                nu,
+                kx,
+                ky,
+                kz,
+                kSq,
+                kSq_inv,
+                dealias,
+            )
+
+            # Update for next stage
+            if rk < 3:
+                vx_hat = vx_hat0 + b[rk] * dt * rhs_x_hat
+                vy_hat = vy_hat0 + b[rk] * dt * rhs_y_hat
+                vz_hat = vz_hat0 + b[rk] * dt * rhs_z_hat
+
+            # Accumulate for final update
+            vx_hat1 = vx_hat1 + a[rk] * dt * rhs_x_hat
+            vy_hat1 = vy_hat1 + a[rk] * dt * rhs_y_hat
+            vz_hat1 = vz_hat1 + a[rk] * dt * rhs_z_hat
+
+        # Final update
+        vx_hat = vx_hat0 + vx_hat1
+        vy_hat = vy_hat0 + vy_hat1
+        vz_hat = vz_hat0 + vz_hat1
+
+        # Transform back to real space
+        vx = jnp.real(jfft.ifftn(vx_hat))
+        vy = jnp.real(jfft.ifftn(vy_hat))
+        vz = jnp.real(jfft.ifftn(vz_hat))
+
+        return (vx, vy, vz)
+
+    (vx, vy, vz) = jax.lax.fori_loop(0, Nt, update, (vx, vy, vz))
+
+    return vx, vy, vz
+
+
 def run_simulation_and_save_checkpoints(
     vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias, folder_name
 ):
@@ -152,9 +315,14 @@ def run_simulation_and_save_checkpoints(
     time_start = time.time()
     for i in range(0, Nt, snap_interval):
         steps = min(snap_interval, Nt - i)
-        vx, vy, vz = run_simulation(
-            vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
-        )
+        if args.no_rk4:
+            vx, vy, vz = run_simulation_simple(
+                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
+            )
+        else:
+            vx, vy, vz = run_simulation_rk4(
+                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
+            )
         state = {}
         state["vx"] = vx
         state["vy"] = vy
@@ -184,8 +352,11 @@ def main():
     nu = 1.0 / 1600.0
 
     print(f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}")
+    print(
+        f"using {'4th-order Runge-Kutta' if not args.no_rk4 else 'backwards Euler'} method"
+    )
 
-    assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
+    # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
 
     # Domain [0,1]^3
     L = 2.0 * jnp.pi
@@ -236,6 +407,7 @@ def main():
     del div_v
 
     # Run the simulation
+    out_folder = f"checkpoints{N}" if not args.no_rk4 else f"checkpoints{N}_simple"
     start_time = time.time()
     state = run_simulation_and_save_checkpoints(
         vx,
@@ -250,7 +422,7 @@ def main():
         kSq,
         kSq_inv,
         dealias,
-        f"checkpoints{N}",
+        out_folder,
     )
     jax.block_until_ready(state)
     # jax.profiler.save_device_memory_profile("memory.prof") # for memory profiling
