@@ -56,8 +56,9 @@ if args.cpu_only:
     os.environ["XLA_FLAGS"] = flags
     print("Using CPU only mode")
 else:
-    print("Using GPU distributed mode")
     jax.distributed.initialize()
+    if jax.process_index() == 0:
+        print("Using GPU distributed mode")
 
 # Create mesh and sharding for distributed computation
 n_devices = jax.device_count()
@@ -340,11 +341,20 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias
 
 
 def run_simulation_and_save_checkpoints(
-    vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias, folder_name
+    vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias, out_folder
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
-    path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
+    # path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
+    path = os.path.join(os.getcwd(), out_folder)
+    output_is_setup = False
+    if jax.process_index() == 0:
+        if os.path.exists(path):
+            os.rmdir(path)
+        os.makedirs(path)
+        print(f"Saving checkpoints to {path}")
+        output_is_setup = True
+    jax.block_until_ready(output_is_setup)
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
     num_checkpoints = 100
@@ -418,12 +428,15 @@ def main():
     kx = jfft.ifftshift(kx)
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
-    kx = jax.lax.with_sharding_constraint(kx, sharding)
-    ky = jax.lax.with_sharding_constraint(ky, sharding)
-    kz = jax.lax.with_sharding_constraint(kz, sharding)
     kSq = kx**2 + ky**2 + kz**2
     kSq_inv = 1.0 / kSq
     kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
+
+    kx = jax.lax.with_sharding_constraint(kx, sharding)
+    ky = jax.lax.with_sharding_constraint(ky, sharding)
+    kz = jax.lax.with_sharding_constraint(kz, sharding)
+    kSq = jax.lax.with_sharding_constraint(kSq, sharding)
+    kSq_inv = jax.lax.with_sharding_constraint(kSq_inv, sharding)
 
     # dealias with the 2/3 rule
     dealias = (
@@ -449,9 +462,6 @@ def main():
     vz = jnp.zeros_like(vx)
 
     if jax.process_index() == 0:
-        print("xx:")
-        print(f"  Shape: {xx.shape}")
-        print(f"  Sharding: {xx.sharding}")
         print("vx:")
         print(f"  Shape: {vx.shape}")
         print(f"  Sharding: {vx.sharding}")
@@ -466,6 +476,8 @@ def main():
 
     # Run the simulation
     out_folder = f"checkpoints{N}" if not args.no_rk4 else f"checkpoints{N}_simple"
+    if jax.process_index() == 0:
+        print(f"starting simulation with output folder: {out_folder}")
     start_time = time.time()
     state = run_simulation_and_save_checkpoints(
         vx,
