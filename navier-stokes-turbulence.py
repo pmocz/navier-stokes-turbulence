@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import jax.numpy.fft as jfft
 from functools import partial
 import os
+import shutil
 import argparse
 import time
 import orbax.checkpoint as ocp
@@ -350,7 +351,7 @@ def run_simulation_and_save_checkpoints(
     output_is_setup = False
     if jax.process_index() == 0:
         if os.path.exists(path):
-            os.rmdir(path)
+            shutil.rmtree(path)
         os.makedirs(path)
         print(f"Saving checkpoints to {path}")
         output_is_setup = True
