@@ -462,9 +462,9 @@ def main():
     vz = jnp.zeros_like(vx)
 
     if jax.process_index() == 0:
-        print("vx:")
-        print(f"  Shape: {vx.shape}")
-        print(f"  Sharding: {vx.sharding}")
+        print("vz:")
+        print(f"  Shape: {vz.shape}")
+        print(f"  Sharding: {v.sharding}")
 
     del xx, yy, zz  # clear meshgrid to save memory
 
