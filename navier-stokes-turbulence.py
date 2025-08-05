@@ -3,7 +3,6 @@ import jax.numpy as jnp
 import jax.numpy.fft as jfft
 from functools import partial
 import os
-import shutil
 import argparse
 import time
 import orbax.checkpoint as ocp
@@ -12,6 +11,13 @@ from jax.sharding import Mesh, PartitionSpec, NamedSharding
 # import jax.profiler
 
 jax.config.update("jax_enable_x64", True)
+
+
+# TODO: make distributed ffts efficient/slab-based decomposition
+# e.g. see:
+# https://gist.github.com/Findus23/eb5ecb9f65ccf13152cda7c7e521cbdd
+# https://github.com/NVIDIA/CUDALibrarySamples/tree/master/cuFFTMp/JAX_FFT
+
 
 """
 Philip Mocz (2025), @pmocz
@@ -346,16 +352,11 @@ def run_simulation_and_save_checkpoints(
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
-    # path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
-    path = os.path.join(os.getcwd(), out_folder)
-    output_is_setup = False
-    if jax.process_index() == 0:
-        if os.path.exists(path):
-            shutil.rmtree(path)
-        os.makedirs(path)
-        print(f"Saving checkpoints to {path}")
-        output_is_setup = True
-    jax.block_until_ready(output_is_setup)
+    path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
+    # path = os.path.join(os.getcwd(), out_folder)
+    # if jax.process_index() == 0:
+    #    os.makedirs(path)
+    #     print(f"Saving checkpoints to {path}")
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
     num_checkpoints = 100
