@@ -12,6 +12,13 @@ from jax.sharding import Mesh, PartitionSpec, NamedSharding
 
 jax.config.update("jax_enable_x64", True)
 
+
+# TODO: make distributed ffts efficient/slab-based decomposition
+# e.g. see:
+# https://gist.github.com/Findus23/eb5ecb9f65ccf13152cda7c7e521cbdd
+# https://github.com/NVIDIA/CUDALibrarySamples/tree/master/cuFFTMp/JAX_FFT
+
+
 """
 Philip Mocz (2025), @pmocz
 
@@ -345,16 +352,11 @@ def run_simulation_and_save_checkpoints(
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
-    # path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + folder_name)
-    path = os.path.join(os.getcwd(), out_folder)
-    output_is_setup = False
-    if jax.process_index() == 0:
-        if os.path.exists(path):
-            os.rmdir(path)
-        os.makedirs(path)
-        print(f"Saving checkpoints to {path}")
-        output_is_setup = True
-    jax.block_until_ready(output_is_setup)
+    path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
+    # path = os.path.join(os.getcwd(), out_folder)
+    # if jax.process_index() == 0:
+    #    os.makedirs(path)
+    #     print(f"Saving checkpoints to {path}")
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
     num_checkpoints = 100
@@ -409,7 +411,7 @@ def main():
 
     # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
 
-    # Domain [0,1]^3
+    # Domain [0,2*pi]^3
     L = 2.0 * jnp.pi
     # dx = L / N
     xlin = jnp.linspace(0, L, num=N + 1)
@@ -464,7 +466,7 @@ def main():
     if jax.process_index() == 0:
         print("vz:")
         print(f"  Shape: {vz.shape}")
-        print(f"  Sharding: {v.sharding}")
+        print(f"  Sharding: {vz.sharding}")
 
     del xx, yy, zz  # clear meshgrid to save memory
 
