@@ -1,6 +1,7 @@
-checkpoints*
+git checkpoints*
 *~
 .DS_Store
+__pycache__/
 extras/
 slurm*
 memory.prof
