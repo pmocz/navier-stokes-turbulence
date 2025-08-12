@@ -411,7 +411,7 @@ def main():
 
     # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
 
-    # Domain [0,1]^3
+    # Domain [0,2*pi]^3
     L = 2.0 * jnp.pi
     # dx = L / N
     xlin = jnp.linspace(0, L, num=N + 1)
