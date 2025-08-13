@@ -7,7 +7,9 @@ import argparse
 import time
 import orbax.checkpoint as ocp
 from jax.experimental import mesh_utils
+from jax.experimental.custom_partitioning import custom_partitioning
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
+from typing import Callable
 # import jax.profiler
 
 jax.config.update("jax_enable_x64", True)
@@ -69,8 +71,9 @@ else:
 
 # Create mesh and sharding for distributed computation
 n_devices = jax.device_count()
-mesh = Mesh(mesh_utils.create_device_mesh((n_devices, 1, 1)), ("x", "y", "z"))
-sharding = NamedSharding(mesh, PartitionSpec("x", "y", "z"))
+devices = mesh_utils.create_device_mesh((n_devices,))
+mesh = Mesh(devices, axis_names=("gpus",))
+sharding = NamedSharding(mesh, PartitionSpec(None, "gpus"))
 
 if jax.process_index() == 0:
     for env_var in [
@@ -88,34 +91,135 @@ if jax.process_index() == 0:
     print("Number of devices on this process: ", jax.local_device_count())
 
 
+def fft_partitioner(
+    fft_func: Callable[[jax.Array], jax.Array],
+    partition_spec: PartitionSpec,
+):
+    @custom_partitioning
+    def func(x):
+        return fft_func(x)
+
+    def supported_sharding(sharding, shape):
+        return NamedSharding(sharding.mesh, partition_spec)
+
+    def partition(mesh, arg_shapes, result_shape):
+        # result_shardings = jax.tree.map(lambda x: x.sharding, result_shape)
+        arg_shardings = jax.tree.map(lambda x: x.sharding, arg_shapes)
+        return (
+            mesh,
+            fft_func,
+            supported_sharding(arg_shardings[0], arg_shapes[0]),
+            (supported_sharding(arg_shardings[0], arg_shapes[0]),),
+        )
+
+    def infer_sharding_from_operands(mesh, arg_shapes, shape):
+        arg_shardings = jax.tree.map(lambda x: x.sharding, arg_shapes)
+        return supported_sharding(arg_shardings[0], arg_shapes[0])
+
+    func.def_partition(
+        infer_sharding_from_operands=infer_sharding_from_operands,
+        partition=partition,
+        sharding_rule="i j k -> i j k",
+    )
+    return func
+
+
+def _fft_XY(x):
+    return jfft.fftn(x, axes=[0, 1])
+
+
+def _fft_Z(x):
+    return jfft.fft(x, axis=2)
+
+
+def _ifft_XY(x):
+    return jfft.ifftn(x, axes=[0, 1])
+
+
+def _ifft_Z(x):
+    return jfft.ifft(x, axis=2)
+
+
+# Use einsum-like notation for sharding rules
+# fft_XY/ifft_XY: operate on 2D slices (axes [0,1])
+# fft_Z/ifft_Z: operate on 1D slices (axis 2)
+fft_XY = fft_partitioner(_fft_XY, PartitionSpec(None, None, "gpus"))
+fft_Z = fft_partitioner(_fft_Z, PartitionSpec(None, "gpus"))
+ifft_XY = fft_partitioner(_ifft_XY, PartitionSpec(None, None, "gpus"))
+ifft_Z = fft_partitioner(_ifft_Z, PartitionSpec(None, "gpus"))
+
+
+def xfft3d(x):
+    x = fft_Z(x)
+    x = fft_XY(x)
+    return x
+
+
+def ixfft3d(x):
+    x = ifft_XY(x)
+    x = ifft_Z(x)
+    return x
+
+
+# set up xfft
+with mesh:
+    xfft3d_jit = jax.jit(
+        xfft3d,
+        in_shardings=sharding,
+        out_shardings=sharding,
+    )
+
+with mesh:
+    ixfft3d_jit = jax.jit(
+        ixfft3d,
+        in_shardings=sharding,
+        out_shardings=sharding,
+    )
+
+
+# if n_devices > 1, should be using xfft instead of jfft:
+# my_fftn = jfft.fftn
+# my_ifftn = jfft.ifftn
+my_fftn = xfft3d_jit
+my_ifftn = ixfft3d_jit
+
+
+def xmeshgrid(xlin):
+    xx, yy, zz = jnp.meshgrid(xlin, xlin, xlin, indexing="ij")
+    return xx, yy, zz
+
+
+xmeshgrid_jit = jax.jit(xmeshgrid, in_shardings=None, out_shardings=sharding)
+
+
 def poisson_solve(rho, kSq_inv):
     """solve the Poisson equation, given source field rho"""
-    V_hat = -(jfft.fftn(rho)) * kSq_inv
+    V_hat = -(my_fftn(rho)) * kSq_inv
     V = jnp.real(jfft.ifftn(V_hat))
     return V
 
 
 def diffusion_solve(v, dt, nu, kSq):
     """solve the diffusion equation over a timestep dt, given viscosity nu"""
-    v_hat = (jfft.fftn(v)) / (1.0 + dt * nu * kSq)
+    v_hat = (my_fftn(v)) / (1.0 + dt * nu * kSq)
     v = jnp.real(jfft.ifftn(v_hat))
     return v
 
 
 def grad(v, kx, ky, kz):
     """return gradient of v"""
-    v_hat = jfft.fftn(v)
-    dvx = jnp.real(jfft.ifftn(1j * kx * v_hat))
-    dvy = jnp.real(jfft.ifftn(1j * ky * v_hat))
-    dvz = jnp.real(jfft.ifftn(1j * kz * v_hat))
+    v_hat = my_fftn(v)
+    dvx = jnp.real(my_ifftn(1j * kx * v_hat))
+    dvy = jnp.real(my_ifftn(1j * ky * v_hat))
+    dvz = jnp.real(my_ifftn(1j * kz * v_hat))
     return dvx, dvy, dvz
 
 
 def div(vx, vy, vz, kx, ky, kz):
     """return divergence of (vx,vy,vz)"""
-    dvx_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vx)))
-    dvy_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vy)))
-    dvz_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vz)))
+    dvx_x = jnp.real(my_ifftn(1j * kx * my_fftn(vx)))
+    dvy_y = jnp.real(my_ifftn(1j * ky * my_fftn(vy)))
+    dvz_z = jnp.real(my_ifftn(1j * kz * my_fftn(vz)))
     return dvx_x + dvy_y + dvz_z
 
 
@@ -124,12 +228,12 @@ def curl(vx, vy, vz, kx, ky, kz):
     # wx = dvy/dz - dvz/dy
     # wy = dvz/dx - dvx/dz
     # wz = dvx/dy - dvy/dx
-    dvy_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vy)))
-    dvz_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vz)))
-    dvz_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vz)))
-    dvx_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vx)))
-    dvx_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vx)))
-    dvy_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vy)))
+    dvy_z = jnp.real(my_ifftn(1j * kz * my_fftn(vy)))
+    dvz_y = jnp.real(my_ifftn(1j * ky * my_fftn(vz)))
+    dvz_x = jnp.real(my_ifftn(1j * kx * my_fftn(vz)))
+    dvx_z = jnp.real(my_ifftn(1j * kz * my_fftn(vx)))
+    dvx_y = jnp.real(my_ifftn(1j * ky * my_fftn(vx)))
+    dvy_x = jnp.real(my_ifftn(1j * kx * my_fftn(vy)))
     wx = dvy_z - dvz_y
     wy = dvz_x - dvx_z
     wz = dvx_y - dvy_x
@@ -150,9 +254,9 @@ def curl_spectral(vx_hat, vy_hat, vz_hat, kx, ky, kz):
 def cross_product_spectral(vx, vy, vz, wx_hat, wy_hat, wz_hat, kx, ky, kz):
     """Compute cross product (v × curl) in spectral space"""
     # Transform curl back to real space
-    wx = jnp.real(jfft.ifftn(wx_hat))
-    wy = jnp.real(jfft.ifftn(wy_hat))
-    wz = jnp.real(jfft.ifftn(wz_hat))
+    wx = jnp.real(my_ifftn(wx_hat))
+    wy = jnp.real(my_ifftn(wy_hat))
+    wz = jnp.real(my_ifftn(wz_hat))
 
     # Compute cross product in real space
     cross_x = vy * wz - vz * wy
@@ -160,9 +264,9 @@ def cross_product_spectral(vx, vy, vz, wx_hat, wy_hat, wz_hat, kx, ky, kz):
     cross_z = vx * wy - vy * wx
 
     # Transform back to spectral space
-    cross_x_hat = jfft.fftn(cross_x)
-    cross_y_hat = jfft.fftn(cross_y)
-    cross_z_hat = jfft.fftn(cross_z)
+    cross_x_hat = my_fftn(cross_x)
+    cross_y_hat = my_fftn(cross_y)
+    cross_z_hat = my_fftn(cross_z)
 
     return cross_x_hat, cross_y_hat, cross_z_hat
 
@@ -176,8 +280,8 @@ def get_ke(vx, vy, vz, dV):
 
 def apply_dealias(f, dealias):
     """apply 2/3 rule dealias to field f"""
-    f_hat = dealias * jfft.fftn(f)
-    return jnp.real(jfft.ifftn(f_hat))
+    f_hat = dealias * my_fftn(f)
+    return jnp.real(my_ifftn(f_hat))
 
 
 def compute_rhs_rk4(
@@ -276,9 +380,9 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias
         (vx, vy, vz) = state
 
         # Transform to spectral space
-        vx_hat = jfft.fftn(vx)
-        vy_hat = jfft.fftn(vy)
-        vz_hat = jfft.fftn(vz)
+        vx_hat = my_fftn(vx)
+        vy_hat = my_fftn(vy)
+        vz_hat = my_fftn(vz)
 
         # Store initial values
         vx_hat0 = vx_hat
@@ -352,18 +456,23 @@ def run_simulation_and_save_checkpoints(
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
-    path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
-    # path = os.path.join(os.getcwd(), out_folder)
-    # if jax.process_index() == 0:
+    # path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
+    path = os.path.join(os.getcwd(), out_folder)
+    if jax.process_index() == 0:
+        path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
+        print(f"Saving checkpoints to {path}")
     #    os.makedirs(path)
-    #     print(f"Saving checkpoints to {path}")
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
     num_checkpoints = 100
     snap_interval = max(1, Nt // num_checkpoints)
     checkpoint_id = 0
+    if jax.process_index() == 0:
+        print("about to start simulation")
     time_start = time.time()
     for i in range(0, Nt, snap_interval):
+        if jax.process_index() == 0:
+            print(f"step {i} of {snap_interval}")
         steps = min(snap_interval, Nt - i)
         if args.no_rk4:
             vx, vy, vz = run_simulation_simple(
@@ -373,6 +482,8 @@ def run_simulation_and_save_checkpoints(
             vx, vy, vz = run_simulation_rk4(
                 vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
             )
+        if jax.process_index() == 0:
+            print("about to create checkpoint")
         state = {}
         state["vx"] = vx
         state["vy"] = vy
@@ -416,29 +527,34 @@ def main():
     # dx = L / N
     xlin = jnp.linspace(0, L, num=N + 1)
     xlin = xlin[0:N]
-    xx, yy, zz = jnp.meshgrid(xlin, xlin, xlin, indexing="ij")
+    # xx, yy, zz = jnp.meshgrid(xlin, xlin, xlin, indexing="ij")
+    xx, yy, zz = xmeshgrid_jit(xlin)
+    if jax.process_index() == 0:
+        print("meshgrid set up")
 
     # Apply sharding to meshgrid arrays
-    xx = jax.lax.with_sharding_constraint(xx, sharding)
-    yy = jax.lax.with_sharding_constraint(yy, sharding)
-    zz = jax.lax.with_sharding_constraint(zz, sharding)
+    # xx = jax.lax.with_sharding_constraint(xx, sharding)
+    # yy = jax.lax.with_sharding_constraint(yy, sharding)
+    # zz = jax.lax.with_sharding_constraint(zz, sharding)
 
     # Fourier Space Variables
     klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
     kmax = jnp.max(klin)
-    kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
+    # kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
+    kx, ky, kz = xmeshgrid_jit(klin)
     kx = jfft.ifftshift(kx)
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
     kSq = kx**2 + ky**2 + kz**2
-    kSq_inv = 1.0 / kSq
-    kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
+    kSq_inv = 1.0 / (kSq + (kSq == 0)) * (kSq != 0)
+    if jax.process_index() == 0:
+        print("spectral vars set up")
 
-    kx = jax.lax.with_sharding_constraint(kx, sharding)
-    ky = jax.lax.with_sharding_constraint(ky, sharding)
-    kz = jax.lax.with_sharding_constraint(kz, sharding)
-    kSq = jax.lax.with_sharding_constraint(kSq, sharding)
-    kSq_inv = jax.lax.with_sharding_constraint(kSq_inv, sharding)
+    # kx = jax.lax.with_sharding_constraint(kx, sharding)
+    # ky = jax.lax.with_sharding_constraint(ky, sharding)
+    # kz = jax.lax.with_sharding_constraint(kz, sharding)
+    # kSq = jax.lax.with_sharding_constraint(kSq, sharding)
+    # kSq_inv = jax.lax.with_sharding_constraint(kSq_inv, sharding)
 
     # dealias with the 2/3 rule
     dealias = (
@@ -446,6 +562,8 @@ def main():
         & (jnp.abs(ky) < (2.0 / 3.0) * kmax)
         & (jnp.abs(kz) < (2.0 / 3.0) * kmax)
     )
+    if jax.process_index() == 0:
+        print("dealias vars set up")
 
     # Initial Condition (simple vortex, divergence free)
     # vx = -jnp.cos(2.0 * jnp.pi * yy) * jnp.cos(2.0 * jnp.pi * zz)
@@ -500,7 +618,7 @@ def main():
     # jax.profiler.save_device_memory_profile("memory.prof") # for memory profiling
     end_time = time.time()
     if jax.process_index() == 0:
-        print(f"Simulation completed in {end_time - start_time:.6f} seconds")
+        print(f"Simulation N={N} completed in {end_time - start_time:.6f} seconds")
 
 
 if __name__ == "__main__":
