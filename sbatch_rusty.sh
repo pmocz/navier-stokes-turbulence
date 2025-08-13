@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-node=1
-#SBATCH --cpus-per-task=1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=80G
 #SBATCH --time=00-01:00
 
@@ -20,5 +20,5 @@ source $VENVDIR/navier-stokes-turbulence-venv/bin/activate
 
 echo "resolution: $1"
 
-srun python navier-stokes-turbulence.py --res $1
-srun python analyze.py --res $1
+srun --cpu-bind=cores python navier-stokes-turbulence.py --res $1
+srun --cpu-bind=cores python analyze.py --res $1
