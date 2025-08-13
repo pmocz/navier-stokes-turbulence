@@ -251,7 +251,7 @@ def curl_spectral(vx_hat, vy_hat, vz_hat, kx, ky, kz):
     return wx_hat, wy_hat, wz_hat
 
 
-def cross_product_spectral(vx, vy, vz, wx_hat, wy_hat, wz_hat, kx, ky, kz):
+def cross_product_spectral(vx, vy, vz, wx_hat, wy_hat, wz_hat):
     """Compute cross product (v × curl) in spectral space"""
     # Transform curl back to real space
     wx = jnp.real(my_ifftn(wx_hat))
@@ -294,7 +294,7 @@ def compute_rhs_rk4(
 
     # Compute cross product (v × curl)
     rhs_x_hat, rhs_y_hat, rhs_z_hat = cross_product_spectral(
-        vx, vy, vz, wx_hat, wy_hat, wz_hat, kx, ky, kz
+        vx, vy, vz, wx_hat, wy_hat, wz_hat
     )
 
     # Apply dealiasing
@@ -304,9 +304,8 @@ def compute_rhs_rk4(
 
     # Project to enforce incompressibility (pressure correction)
     # P_hat = sum(rhs_hat * k / k^2, axis=0)
-    k_over_kSq = jnp.stack([kx * kSq_inv, ky * kSq_inv, kz * kSq_inv], axis=0)
-    P_hat = jnp.sum(
-        jnp.stack([rhs_x_hat, rhs_y_hat, rhs_z_hat], axis=0) * k_over_kSq, axis=0
+    P_hat = (
+        kx * kSq_inv * rhs_x_hat + ky * kSq_inv * rhs_y_hat + kz * kSq_inv * rhs_z_hat
     )
 
     # Subtract pressure gradient
@@ -472,7 +471,7 @@ def run_simulation_and_save_checkpoints(
     time_start = time.time()
     for i in range(0, Nt, snap_interval):
         if jax.process_index() == 0:
-            print(f"step {i} of {snap_interval}")
+            print(f"step {i} of {Nt}")
         steps = min(snap_interval, Nt - i)
         if args.no_rk4:
             vx, vy, vz = run_simulation_simple(
