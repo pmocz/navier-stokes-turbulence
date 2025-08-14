@@ -195,15 +195,15 @@ xmeshgrid_jit = jax.jit(xmeshgrid, in_shardings=None, out_shardings=sharding)
 def poisson_solve(rho, kSq_inv):
     """solve the Poisson equation, given source field rho"""
     V_hat = -(my_fftn(rho)) * kSq_inv
-    V = jnp.real(jfft.ifftn(V_hat))
+    V = jnp.real(my_ifftn(V_hat))
     return V
 
 
 def diffusion_solve(v, dt, nu, kSq):
     """solve the diffusion equation over a timestep dt, given viscosity nu"""
     v_hat = (my_fftn(v)) / (1.0 + dt * nu * kSq)
-    v = jnp.real(jfft.ifftn(v_hat))
-    return v
+    v_new = jnp.real(my_ifftn(v_hat))
+    return v_new
 
 
 def grad(v, kx, ky, kz):
@@ -228,12 +228,15 @@ def curl(vx, vy, vz, kx, ky, kz):
     # wx = dvy/dz - dvz/dy
     # wy = dvz/dx - dvx/dz
     # wz = dvx/dy - dvy/dx
-    dvy_z = jnp.real(my_ifftn(1j * kz * my_fftn(vy)))
-    dvz_y = jnp.real(my_ifftn(1j * ky * my_fftn(vz)))
-    dvz_x = jnp.real(my_ifftn(1j * kx * my_fftn(vz)))
-    dvx_z = jnp.real(my_ifftn(1j * kz * my_fftn(vx)))
-    dvx_y = jnp.real(my_ifftn(1j * ky * my_fftn(vx)))
-    dvy_x = jnp.real(my_ifftn(1j * kx * my_fftn(vy)))
+    vx_hat = my_fftn(vx)
+    vy_hat = my_fftn(vy)
+    vz_hat = my_fftn(vz)
+    dvy_z = jnp.real(my_ifftn(1j * kz * vy_hat))
+    dvz_y = jnp.real(my_ifftn(1j * ky * vz_hat))
+    dvz_x = jnp.real(my_ifftn(1j * kx * vz_hat))
+    dvx_z = jnp.real(my_ifftn(1j * kz * vx_hat))
+    dvx_y = jnp.real(my_ifftn(1j * ky * vx_hat))
+    dvy_x = jnp.real(my_ifftn(1j * kx * vy_hat))
     wx = dvy_z - dvz_y
     wy = dvz_x - dvx_z
     wz = dvx_y - dvy_x
@@ -397,9 +400,9 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias
         for rk in range(4):
             # Transform back to real space if needed (for cross product)
             if rk > 0:
-                vx_temp = jnp.real(jfft.ifftn(vx_hat))
-                vy_temp = jnp.real(jfft.ifftn(vy_hat))
-                vz_temp = jnp.real(jfft.ifftn(vz_hat))
+                vx_temp = jnp.real(my_ifftn(vx_hat))
+                vy_temp = jnp.real(my_ifftn(vy_hat))
+                vz_temp = jnp.real(my_ifftn(vz_hat))
             else:
                 vx_temp = vx
                 vy_temp = vy
@@ -439,9 +442,9 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias
         vz_hat = vz_hat0 + vz_hat1
 
         # Transform back to real space
-        vx = jnp.real(jfft.ifftn(vx_hat))
-        vy = jnp.real(jfft.ifftn(vy_hat))
-        vz = jnp.real(jfft.ifftn(vz_hat))
+        vx = jnp.real(my_ifftn(vx_hat))
+        vy = jnp.real(my_ifftn(vy_hat))
+        vz = jnp.real(my_ifftn(vz_hat))
 
         return (vx, vy, vz)
 
