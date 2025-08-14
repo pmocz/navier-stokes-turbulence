@@ -46,9 +46,9 @@ python navier-stokes-turbulence.py --res 64
 parser = argparse.ArgumentParser(description="3D Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 parser.add_argument(
-    "--no-rk4",
+    "--rk4",
     action="store_true",
-    help="Disable 4th-order Runge-Kutta time integration (default: False, use RK4 by default)",
+    help="Enable 4th-order Runge-Kutta time integration (default: False, use backwards Euler by default)",
 )
 parser.add_argument(
     "--cpu-only",
@@ -184,8 +184,8 @@ my_fftn = xfft3d_jit
 my_ifftn = ixfft3d_jit
 
 
-def xmeshgrid(xlin):
-    xx, yy, zz = jnp.meshgrid(xlin, xlin, xlin, indexing="ij")
+def xmeshgrid(x_lin):
+    xx, yy, zz = jnp.meshgrid(x_lin, x_lin, x_lin, indexing="ij")
     return xx, yy, zz
 
 
@@ -470,23 +470,31 @@ def run_simulation_and_save_checkpoints(
     snap_interval = max(1, Nt // num_checkpoints)
     checkpoint_id = 0
     if jax.process_index() == 0:
+        print("saving initial condition")
+    state = {}
+    state["vx"] = vx
+    state["vy"] = vy
+    state["vz"] = vz
+    async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
+    async_checkpoint_manager.wait_until_finished()
+    checkpoint_id += 1
+    if jax.process_index() == 0:
         print("about to start simulation")
     time_start = time.time()
     for i in range(0, Nt, snap_interval):
         if jax.process_index() == 0:
             print(f"step {i} of {Nt}")
         steps = min(snap_interval, Nt - i)
-        if args.no_rk4:
-            vx, vy, vz = run_simulation_simple(
+        if args.rk4:
+            vx, vy, vz = run_simulation_rk4(
                 vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
             )
         else:
-            vx, vy, vz = run_simulation_rk4(
+            vx, vy, vz = run_simulation_simple(
                 vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
             )
         if jax.process_index() == 0:
             print("about to create checkpoint")
-        state = {}
         state["vx"] = vx
         state["vy"] = vy
         state["vz"] = vz
@@ -519,7 +527,7 @@ def main():
             f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}"
         )
         print(
-            f"using {'4th-order Runge-Kutta' if not args.no_rk4 else 'backwards Euler'} method"
+            f"using {'4th-order Runge-Kutta' if args.rk4 else 'backwards Euler'} method"
         )
 
     # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
@@ -527,10 +535,10 @@ def main():
     # Domain [0,2*pi]^3
     L = 2.0 * jnp.pi
     # dx = L / N
-    xlin = jnp.linspace(0, L, num=N + 1)
-    xlin = xlin[0:N]
-    # xx, yy, zz = jnp.meshgrid(xlin, xlin, xlin, indexing="ij")
-    xx, yy, zz = xmeshgrid_jit(xlin)
+    x_lin = jnp.linspace(0, L, num=N + 1)
+    x_lin = x_lin[0:N]
+    # xx, yy, zz = jnp.meshgrid(x_lin, x_lin, x_lin, indexing="ij")
+    xx, yy, zz = xmeshgrid_jit(x_lin)
     if jax.process_index() == 0:
         print("meshgrid set up")
 
@@ -540,10 +548,10 @@ def main():
     # zz = jax.lax.with_sharding_constraint(zz, sharding)
 
     # Fourier Space Variables
-    klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
-    kmax = jnp.max(klin)
-    # kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
-    kx, ky, kz = xmeshgrid_jit(klin)
+    k_lin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
+    kmax = jnp.max(k_lin)
+    # kx, ky, kz = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
+    kx, ky, kz = xmeshgrid_jit(k_lin)
     kx = jfft.ifftshift(kx)
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
@@ -597,7 +605,7 @@ def main():
     del div_v
 
     # Run the simulation
-    out_folder = f"checkpoints{N}" if not args.no_rk4 else f"checkpoints{N}_simple"
+    out_folder = f"checkpoints{N}_rk4" if args.rk4 else f"checkpoints{N}"
     if jax.process_index() == 0:
         print(f"starting simulation with output folder: {out_folder}")
     start_time = time.time()
@@ -621,7 +629,7 @@ def main():
     end_time = time.time()
     if jax.process_index() == 0:
         print(f"Simulation N={N} completed in {end_time - start_time:.6f} seconds")
-        with open(f"timing.txt", "w") as f:
+        with open(os.path.join(out_folder, "timing.txt"), "w") as f:
             f.write(f"{end_time - start_time:.6f} seconds\n")
 
 

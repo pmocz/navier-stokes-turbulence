@@ -32,11 +32,11 @@ def summarize_results(resolutions):
 
     # Find the maximum resolution for which results exist
     existing_res = [
-        res for res in resolutions if os.path.exists(f"checkpoints{res}/results.npz")
+        res for res in resolutions if os.path.exists(f"checkpoints{res}/results_Pf.npz")
     ]
 
     for res in existing_res:
-        results_path = f"checkpoints{res}/results.npz"
+        results_path = f"checkpoints{res}/results_Pf.npz"
         data = np.load(results_path)
         k = data["k"]
         Pf_all = data["Pf_all"]

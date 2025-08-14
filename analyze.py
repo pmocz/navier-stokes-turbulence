@@ -25,9 +25,9 @@ python analyze.py --res 64
 parser = argparse.ArgumentParser(description="Analyze Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 parser.add_argument(
-    "--no-rk4",
+    "--rk4",
     action="store_true",
-    help="Non 4th-order Runge-Kutta run (default: False, sim uses RK4 by default)",
+    help="Load rk4 checkpoints (default: False)",
 )
 parser.add_argument("--show", action="store_true", help="Show plots interactively")
 args = parser.parse_args()
@@ -38,39 +38,41 @@ skip = 20
 
 path = os.path.join(
     os.path.dirname(__file__),
-    f"checkpoints{N}" if not args.no_rk4 else f"checkpoints{N}_simple",
+    f"checkpoints{N}_rk4" if args.rk4 else f"checkpoints{N}",
 )
 async_checkpoint_manager = ocp.CheckpointManager(path)
 
 # Fourier Space Variables
 L = 2.0 * jnp.pi  # Domain size
-klin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
-kmax = jnp.max(klin)
-kx, ky, kz = jnp.meshgrid(klin, klin, klin, indexing="ij")
+k_lin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
+kmax = jnp.max(k_lin)
+kx, ky, kz = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
 kx = jfft.ifftshift(kx)
 ky = jfft.ifftshift(ky)
 kz = jfft.ifftshift(kz)
 kSq = kx**2 + ky**2 + kz**2
-kSq_inv = 1.0 / kSq
-kSq_inv = kSq_inv.at[kSq == 0].set(1.0)
+kSq_inv = 1.0 / (kSq + (kSq == 0)) * (kSq != 0)
 
 colors = [(0, 0, 0), (1, 0, 0)]  # Black (0,0,0) to Red (1,0,0)
 
 cmap_name = "BlackToRed"
 custom_cmap = LinearSegmentedColormap.from_list(
-    cmap_name, colors, N=num_checkpoints // skip
+    cmap_name, colors, N=num_checkpoints // skip + 1
 )
 
 
 @jax.jit
 def curl(vx, vy, vz):
     """return curl of (vx,vy,vz) as (wx, wy, wz)"""
-    dvy_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vy)))
-    dvz_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vz)))
-    dvz_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vz)))
-    dvx_z = jnp.real(jfft.ifftn(1j * kz * jfft.fftn(vx)))
-    dvx_y = jnp.real(jfft.ifftn(1j * ky * jfft.fftn(vx)))
-    dvy_x = jnp.real(jfft.ifftn(1j * kx * jfft.fftn(vy)))
+    vx_hat = jfft.fftn(vx)
+    vy_hat = jfft.fftn(vy)
+    vz_hat = jfft.fftn(vz)
+    dvy_z = jnp.real(jfft.ifftn(1j * kz * vy_hat))
+    dvz_y = jnp.real(jfft.ifftn(1j * ky * vz_hat))
+    dvz_x = jnp.real(jfft.ifftn(1j * kx * vz_hat))
+    dvx_z = jnp.real(jfft.ifftn(1j * kz * vx_hat))
+    dvx_y = jnp.real(jfft.ifftn(1j * ky * vx_hat))
+    dvy_x = jnp.real(jfft.ifftn(1j * kx * vy_hat))
     wx = dvy_z - dvz_y
     wy = dvz_x - dvx_z
     wz = dvx_y - dvy_x
@@ -96,12 +98,12 @@ def radial_power_spectrum(data_cube, Lbox):
     half_size = N // 2 + 1
 
     # Compute radially-averaged power spectrum
-    k_cartesian = jnp.arange(-N // 2, N // 2)
+    k_lin = jnp.arange(-N // 2, N // 2)
     if dim == 2:
-        X, Y = jnp.meshgrid(k_cartesian, k_cartesian, indexing="ij")
+        X, Y = jnp.meshgrid(k_lin, k_lin, indexing="ij")
         k_rho = jnp.sqrt(X**2 + Y**2)
     else:
-        X, Y, Z = jnp.meshgrid(k_cartesian, k_cartesian, k_cartesian, indexing="ij")
+        X, Y, Z = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
         k_rho = jnp.sqrt(X**2 + Y**2 + Z**2)
 
     k_rho = jnp.round(k_rho).astype(jnp.int32)
@@ -127,8 +129,7 @@ def radial_power_spectrum(data_cube, Lbox):
 
 
 def main():
-    # v_all = jnp.zeros((num_checkpoints, args.res, args.res, args.res))
-    Pf_all = jnp.zeros((num_checkpoints // skip, args.res // 2 + 1))
+    Pf_all = jnp.zeros((num_checkpoints // skip + 1, args.res // 2 + 1))
     target = {
         "vx": jnp.zeros((N, N, N)),
         "vy": jnp.zeros((N, N, N)),
@@ -136,22 +137,23 @@ def main():
     }
 
     start_time = time.time()
-    for i in range(num_checkpoints // skip):
-        print(f"processing checkpoint {i * skip}...")
+    for i in range(num_checkpoints // skip + 1):
+        i_checkpoint = i * skip
+        print(f"processing checkpoint {i_checkpoint}...")
 
         restored = async_checkpoint_manager.restore(
-            i * skip, args=ocp.args.StandardRestore(target)
+            i_checkpoint, args=ocp.args.StandardRestore(target)
         )
 
         vx = restored["vx"]
         vy = restored["vy"]
         vz = restored["vz"]
         v = jnp.sqrt(vx**2 + vy**2 + vz**2)
+        v.block_until_ready()
 
         wx, wy, wz = curl(vx, vy, vz)
         w = jnp.sqrt(wx**2 + wy**2 + wz**2)
-
-        # v_all = v_all.at[i].set(v)
+        w.block_until_ready()
 
         # Calculate the radial power spectrum
         Pf_vx, k, total_power = radial_power_spectrum(vx, Lbox=L)
@@ -161,39 +163,54 @@ def main():
         Pf = Pf_vx + Pf_vy + Pf_vz
         Pf_all = Pf_all.at[i].set(Pf)
 
-    # Save the results: v, k, Pf_all
+        # save the results: v, w, k, Pf
+        np.savez(
+            os.path.join(path, f"results_{i}.npz"),
+            v=v,
+            w=w,
+            k=k,
+            Pf=Pf,
+            total_power=total_power,
+        )
+
+        # Plot a slice of v as an image
+        fig = plt.figure(figsize=(8, 6))
+        plt.imshow(v[:, :, v.shape[2] // 2], cmap="viridis")
+        # plt.imshow(vx[:, :, v.shape[2] // 2], cmap="viridis")
+        # plt.clim(-1, 1)
+        plt.colorbar(label="velocity magnitude")
+        plt.savefig(
+            os.path.join(path, f"slice_v_{i_checkpoint}.png"),
+            dpi=200,
+            bbox_inches="tight",
+        )
+        if args.show:
+            plt.show()
+        plt.close(fig)
+
+        # Plot a slice of w as an image
+        fig = plt.figure(figsize=(8, 6))
+        plt.imshow(w[:, :, w.shape[2] // 2], cmap="viridis")
+        plt.colorbar(label="velocity magnitude")
+        plt.savefig(
+            os.path.join(path, f"slice_w_{i_checkpoint}.png"),
+            dpi=200,
+            bbox_inches="tight",
+        )
+        if args.show:
+            plt.show()
+        plt.close(fig)
+
+    # Save the results: Pf_all
     np.savez(
-        os.path.join(path, "results.npz"),
-        v=v,
-        w=w,
+        os.path.join(path, "results_Pf.npz"),
         k=k,
         Pf_all=Pf_all,
-        total_power=total_power,
     )
-
-    # Plot a slice of v as an image
-    fig = plt.figure(figsize=(8, 6))
-    plt.imshow(v[:, :, v.shape[2] // 2], cmap="viridis")
-    # plt.imshow(vx[:, :, v.shape[2] // 2], cmap="viridis")
-    # plt.clim(-1, 1)
-    plt.colorbar(label="velocity magnitude")
-    plt.savefig(os.path.join(path, "slice_v.png"), dpi=200, bbox_inches="tight")
-    if args.show:
-        plt.show()
-    plt.close(fig)
-
-    # Plot a slice of w as an image
-    fig = plt.figure(figsize=(8, 6))
-    plt.imshow(w[:, :, w.shape[2] // 2], cmap="viridis")
-    plt.colorbar(label="velocity magnitude")
-    plt.savefig(os.path.join(path, "slice_w.png"), dpi=200, bbox_inches="tight")
-    if args.show:
-        plt.show()
-    plt.close(fig)
 
     # Plot the radial power spectrum
     fig = plt.figure(figsize=(8, 6))
-    for i in range(num_checkpoints // skip):
+    for i in range(num_checkpoints // skip + 1):
         plt.plot(
             k,
             Pf_all[i],
