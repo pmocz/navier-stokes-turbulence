@@ -493,6 +493,9 @@ def run_simulation_and_save_checkpoints(
             vx, vy, vz = run_simulation_simple(
                 vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
             )
+        vx.block_until_ready()
+        vy.block_until_ready()
+        vz.block_until_ready()
         if jax.process_index() == 0:
             print("about to create checkpoint")
         state["vx"] = vx

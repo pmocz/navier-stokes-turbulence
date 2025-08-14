@@ -61,8 +61,9 @@ def summarize_results(resolutions):
                 k,
                 Pf,
                 label=label,
-                linewidth=0.5 + res / 256,
+                linewidth=0.5 + res / 256.0,
                 color=color,
+                alpha=np.log2(res) / 11.0,
             )
 
     # plot a -5/3 reference line
@@ -75,8 +76,8 @@ def summarize_results(resolutions):
     plt.xscale("log")
     plt.yscale("log")
     plt.legend(loc="upper right")
-    plt.xlim([1.0, 512.0])
-    plt.ylim([1.0e-4, 5.0e1])
+    plt.xlim([1.0, 128.0])
+    plt.ylim([1.0e-4, 4.0e1])
     plt.savefig("pspec.png")
     if args.show:
         plt.show()
@@ -84,13 +85,17 @@ def summarize_results(resolutions):
 
     # Plot the timings
     fig = plt.figure(figsize=(8, 6))
+    res_ref = np.linspace(32, 2048, 100)
+    ref_line = 0.0001 * res_ref**3
+    plt.plot(res_ref, ref_line, "k--", label="3", linewidth=1)
     plt.plot(existing_res, timings, marker="o")
+    plt.title("Timings")
     plt.xlabel("resolution")
     plt.ylabel("time (seconds)")
     plt.xscale("log")
     plt.yscale("log")
     plt.xticks(resolutions, labels=[str(r) for r in resolutions])
-    plt.ylim(1e2, 1e5)
+    plt.ylim(1e1, 1e5)
     plt.savefig("timings.png")
     if args.show:
         plt.show()

@@ -47,6 +47,8 @@ python analyze.py --res 64
 python summarize.py --res 64
 ```
 
-creates the following plot:
+creates the following plots:
 
 ![Velocity Power Spectrum](pspec.png)
+
+![Timings](timings.png)
