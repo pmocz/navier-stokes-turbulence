@@ -621,6 +621,8 @@ def main():
     end_time = time.time()
     if jax.process_index() == 0:
         print(f"Simulation N={N} completed in {end_time - start_time:.6f} seconds")
+        with open(f"timing.txt", "w") as f:
+            f.write(f"{end_time - start_time:.6f} seconds\n")
 
 
 if __name__ == "__main__":
