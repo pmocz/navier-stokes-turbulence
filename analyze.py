@@ -22,6 +22,10 @@ python analyze.py --res 64
 
 """
 
+N = args.res
+num_checkpoints = 100
+skip = 20
+
 parser = argparse.ArgumentParser(description="Analyze Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 parser.add_argument(
@@ -37,10 +41,6 @@ path = os.path.join(
     f"checkpoints{N}" if not args.no_rk4 else f"checkpoints{N}_simple",
 )
 async_checkpoint_manager = ocp.CheckpointManager(path)
-
-N = args.res
-num_checkpoints = 100
-skip = 20
 
 # Fourier Space Variables
 L = 2.0 * jnp.pi  # Domain size
