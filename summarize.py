@@ -35,15 +35,25 @@ def summarize_results(resolutions):
         res for res in resolutions if os.path.exists(f"checkpoints{res}/results_Pf.npz")
     ]
 
+    timings = []
+
     for res in existing_res:
         results_path = f"checkpoints{res}/results_Pf.npz"
         data = np.load(results_path)
         k = data["k"]
         Pf_all = data["Pf_all"]
 
+        # also read the timings
+        with open(f"checkpoints{res}/timing.txt", "r") as f:
+            timing_data = f.readlines()
+            for line in timing_data:
+                if "seconds" in line:
+                    time_taken = float(line.split()[0])
+                    timings.append(time_taken)
+
         # Plot the power spectra
         Nsnap = Pf_all.shape[0]
-        for i in range(Nsnap):
+        for i in range(0, Nsnap, 2):
             Pf = Pf_all[i]
             color = plt.cm.turbo(i / Nsnap)
             label = f"res={res}$^3$" if i == Nsnap - 1 else None
@@ -72,10 +82,24 @@ def summarize_results(resolutions):
         plt.show()
     plt.close(fig)
 
+    # Plot the timings
+    fig = plt.figure(figsize=(8, 6))
+    plt.plot(existing_res, timings, marker="o")
+    plt.xlabel("resolution")
+    plt.ylabel("time (seconds)")
+    plt.xscale("log")
+    plt.yscale("log")
+    plt.xticks(resolutions, labels=[str(r) for r in resolutions])
+    plt.ylim(1e2, 1e5)
+    plt.savefig("timings.png")
+    if args.show:
+        plt.show()
+    plt.close(fig)
+
 
 if __name__ == "__main__":
     # Define the resolutions to summarize
-    resolutions = [32, 64, 128, 256, 512, 1024]  # Add more resolutions as needed
+    resolutions = [32, 64, 128, 256, 512, 1024, 2048]  # Add more resolutions as needed
 
     # Call the summarization function
     summarize_results(resolutions)

@@ -34,7 +34,7 @@ args = parser.parse_args()
 
 N = args.res
 num_checkpoints = 100
-skip = 20
+skip = 10
 
 path = os.path.join(
     os.path.dirname(__file__),
