@@ -22,10 +22,6 @@ python analyze.py --res 64
 
 """
 
-N = args.res
-num_checkpoints = 100
-skip = 20
-
 parser = argparse.ArgumentParser(description="Analyze Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 parser.add_argument(
@@ -35,6 +31,10 @@ parser.add_argument(
 )
 parser.add_argument("--show", action="store_true", help="Show plots interactively")
 args = parser.parse_args()
+
+N = args.res
+num_checkpoints = 100
+skip = 20
 
 path = os.path.join(
     os.path.dirname(__file__),
