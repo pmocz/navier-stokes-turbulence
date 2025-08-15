@@ -95,7 +95,7 @@ def summarize_results(resolutions):
     plt.xscale("log")
     plt.yscale("log")
     plt.xticks(resolutions, labels=[str(r) for r in resolutions])
-    plt.ylim(1e1, 1e5)
+    plt.ylim(1e1, 1e6)
     plt.savefig("timings.png")
     if args.show:
         plt.show()
