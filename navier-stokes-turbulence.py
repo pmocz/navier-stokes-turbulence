@@ -215,12 +215,23 @@ def grad(v, kx, ky, kz):
     return dvx, dvy, dvz
 
 
+def gradi(v, ki):
+    """return gradient of v"""
+    v_hat = my_fftn(v)
+    dvi = jnp.real(my_ifftn(1j * ki * v_hat))
+    return dvi
+
+
 def div(vx, vy, vz, kx, ky, kz):
     """return divergence of (vx,vy,vz)"""
-    dvx_x = jnp.real(my_ifftn(1j * kx * my_fftn(vx)))
-    dvy_y = jnp.real(my_ifftn(1j * ky * my_fftn(vy)))
-    dvz_z = jnp.real(my_ifftn(1j * kz * my_fftn(vz)))
-    return dvx_x + dvy_y + dvz_z
+    vx_hat = my_fftn(vx)
+    vy_hat = my_fftn(vy)
+    vz_hat = my_fftn(vz)
+    dvx_x = jnp.real(my_ifftn(1j * kx * vx_hat))
+    dvy_y = jnp.real(my_ifftn(1j * ky * vy_hat))
+    dvz_z = jnp.real(my_ifftn(1j * kz * vz_hat))
+    div = dvx_x + dvy_y + dvz_z
+    return div
 
 
 def curl(vx, vy, vz, kx, ky, kz):
@@ -284,7 +295,8 @@ def get_ke(vx, vy, vz, dV):
 def apply_dealias(f, dealias):
     """apply 2/3 rule dealias to field f"""
     f_hat = dealias * my_fftn(f)
-    return jnp.real(my_ifftn(f_hat))
+    f_filtered = jnp.real(my_ifftn(f_hat))
+    return f_filtered
 
 
 def compute_rhs_rk4(
@@ -332,13 +344,9 @@ def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, deal
         (vx, vy, vz) = state
 
         # Advection: rhs = -(v.grad)v
-        dvx_x, dvx_y, dvx_z = grad(vx, kx, ky, kz)
-        dvy_x, dvy_y, dvy_z = grad(vy, kx, ky, kz)
-        dvz_x, dvz_y, dvz_z = grad(vz, kx, ky, kz)
-
-        rhs_x = -(vx * dvx_x + vy * dvx_y + vz * dvx_z)
-        rhs_y = -(vx * dvy_x + vy * dvy_y + vz * dvy_z)
-        rhs_z = -(vx * dvz_x + vy * dvz_y + vz * dvz_z)
+        rhs_x = -(vx * gradi(vx, kx) + vy * gradi(vx, ky) + vz * gradi(vx, kz))
+        rhs_y = -(vx * gradi(vy, kx) + vy * gradi(vy, ky) + vz * gradi(vy, kz))
+        rhs_z = -(vx * gradi(vz, kx) + vy * gradi(vz, ky) + vz * gradi(vz, kz))
 
         rhs_x = apply_dealias(rhs_x, dealias)
         rhs_y = apply_dealias(rhs_y, dealias)
@@ -351,12 +359,11 @@ def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, deal
         # Poisson solve for pressure
         div_rhs = div(rhs_x, rhs_y, rhs_z, kx, ky, kz)
         P = poisson_solve(div_rhs, kSq_inv)
-        dPx, dPy, dPz = grad(P, kx, ky, kz)
 
         # Correction (to eliminate divergence component of velocity)
-        vx -= dt * dPx
-        vy -= dt * dPy
-        vz -= dt * dPz
+        vx -= dt * gradi(P, kx)
+        vy -= dt * gradi(P, ky)
+        vz -= dt * gradi(P, kz)
 
         # Diffusion solve
         vx = diffusion_solve(vx, dt, nu, kSq)
@@ -463,7 +470,6 @@ def run_simulation_and_save_checkpoints(
     if jax.process_index() == 0:
         path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
         print(f"Saving checkpoints to {path}")
-    #    os.makedirs(path)
     async_checkpoint_manager = ocp.CheckpointManager(path)
 
     num_checkpoints = 100
@@ -475,6 +481,9 @@ def run_simulation_and_save_checkpoints(
     state["vx"] = vx
     state["vy"] = vy
     state["vz"] = vz
+    vx.block_until_ready()
+    vy.block_until_ready()
+    vz.block_until_ready()
     async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
     async_checkpoint_manager.wait_until_finished()
     checkpoint_id += 1
@@ -493,14 +502,14 @@ def run_simulation_and_save_checkpoints(
             vx, vy, vz = run_simulation_simple(
                 vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
             )
-        vx.block_until_ready()
-        vy.block_until_ready()
-        vz.block_until_ready()
         if jax.process_index() == 0:
             print("about to create checkpoint")
         state["vx"] = vx
         state["vy"] = vy
         state["vz"] = vz
+        vx.block_until_ready()
+        vy.block_until_ready()
+        vz.block_until_ready()
         async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
         async_checkpoint_manager.wait_until_finished()
         checkpoint_id += 1
@@ -551,7 +560,7 @@ def main():
     # zz = jax.lax.with_sharding_constraint(zz, sharding)
 
     # Fourier Space Variables
-    k_lin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
+    k_lin = (2.0 * jnp.pi) / L * jnp.arange(-N / 2, N / 2)
     kmax = jnp.max(k_lin)
     # kx, ky, kz = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
     kx, ky, kz = xmeshgrid_jit(k_lin)
