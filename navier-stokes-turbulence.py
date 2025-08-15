@@ -553,6 +553,7 @@ def main():
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
     kSq = kx**2 + ky**2 + kz**2
+    # kSq_inv = 1.0 / (kSq + (kSq == 0)) * (kSq != 0)
     if jax.process_index() == 0:
         print("spectral vars set up")
 
