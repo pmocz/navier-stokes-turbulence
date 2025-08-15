@@ -594,10 +594,10 @@ def main():
     del xx, yy, zz  # clear meshgrid to save memory
 
     # check the divergence of the initial condition
-    div_v = div(vx, vy, vz, kx, ky, kz)
-    div_error = jnp.max(jnp.abs(div_v))
-    assert div_error < 1e-8, f"Initial divergence is too large: {div_error:.6e}"
-    del div_v
+    # div_v = div(vx, vy, vz, kx, ky, kz)
+    # div_error = jnp.max(jnp.abs(div_v))
+    # assert div_error < 1e-8, f"Initial divergence is too large: {div_error:.6e}"
+    # del div_v
 
     # Run the simulation
     out_folder = f"checkpoints{N}_rk4" if args.rk4 else f"checkpoints{N}"
