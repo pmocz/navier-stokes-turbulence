@@ -26,7 +26,7 @@ with a Spectral method
 
 Example Usage:
 
-python navier-stokes-turbulence.py --res 32
+python navier-stokes-turbulence.py --res 32 --cpu-only
 
 """
 

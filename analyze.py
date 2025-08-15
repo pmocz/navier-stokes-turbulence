@@ -44,7 +44,7 @@ async_checkpoint_manager = ocp.CheckpointManager(path)
 
 # Fourier Space Variables
 L = 2.0 * jnp.pi  # Domain size
-k_lin = 2.0 * jnp.pi / L * jnp.arange(-N / 2, N / 2)
+k_lin = (2.0 * jnp.pi / L) * jnp.arange(-N / 2, N / 2)
 kmax = jnp.max(k_lin)
 kx, ky, kz = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
 kx = jfft.ifftshift(kx)
