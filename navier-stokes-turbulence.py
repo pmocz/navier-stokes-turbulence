@@ -186,14 +186,14 @@ def inv(x):
 
 def poisson_solve(rho, kSq):
     """solve the Poisson equation, given source field rho"""
-    V_hat = -(my_fftn(rho)) * inv(kSq)
+    V_hat = -my_fftn(rho) * inv(kSq)
     V = jnp.real(my_ifftn(V_hat))
     return V
 
 
 def diffusion_solve(v, dt, nu, kSq):
     """solve the diffusion equation over a timestep dt, given viscosity nu"""
-    v_hat = (my_fftn(v)) / (1.0 + dt * nu * kSq)
+    v_hat = my_fftn(v) / (1.0 + dt * nu * kSq)
     v_new = jnp.real(my_ifftn(v_hat))
     return v_new
 
@@ -568,8 +568,6 @@ def main():
         & (jnp.abs(ky) < (2.0 / 3.0) * kmax)
         & (jnp.abs(kz) < (2.0 / 3.0) * kmax)
     )
-    if jax.process_index() == 0:
-        print("dealias vars set up")
 
     # Initial Condition (simple vortex, divergence free)
     # vx = -jnp.cos(2.0 * jnp.pi * yy) * jnp.cos(2.0 * jnp.pi * zz)
