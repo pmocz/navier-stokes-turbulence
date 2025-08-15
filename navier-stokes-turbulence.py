@@ -15,30 +15,18 @@ from typing import Callable
 jax.config.update("jax_enable_x64", True)
 
 
-# TODO: make distributed ffts efficient/slab-based decomposition
-# e.g. see:
-# https://gist.github.com/Findus23/eb5ecb9f65ccf13152cda7c7e521cbdd
-# https://github.com/NVIDIA/CUDALibrarySamples/tree/master/cuFFTMp/JAX_FFT
-
-
 """
 Philip Mocz (2025), @pmocz
 
 Simulate the 3D Navier-Stokes equations (incompressible viscous fluid) 
 with a Spectral method
 
-v_t + (v.nabla) v = nu * nabla^2 v - nabla P
-div(v) = 0
-
-RK4 method uses:
-- 4th-order Runge-Kutta time integration
-- Spectral method in Fourier space
-- Projection method for incompressibility
-- 2/3 rule dealiasing
+    v_t + (v.nabla) v = nu * nabla^2 v - nabla P
+    div(v) = 0
 
 Example Usage:
 
-python navier-stokes-turbulence.py --res 64
+python navier-stokes-turbulence.py --res 32
 
 """
 
@@ -53,7 +41,7 @@ parser.add_argument(
 parser.add_argument(
     "--cpu-only",
     action="store_true",
-    help="Use CPU only (default: False, use GPU if available)",
+    help="Use CPU only (default: False, use GPU)",
 )
 args = parser.parse_args()
 
@@ -140,7 +128,6 @@ def _ifft_Z(x):
     return jfft.ifft(x, axis=2)
 
 
-# Use einsum-like notation for sharding rules
 # fft_XY/ifft_XY: operate on 2D slices (axes [0,1])
 # fft_Z/ifft_Z: operate on 1D slices (axis 2)
 fft_XY = fft_partitioner(_fft_XY, PartitionSpec(None, None, "gpus"))
@@ -161,7 +148,7 @@ def ixfft3d(x):
     return x
 
 
-# set up xfft
+# set up xfft (distributed version of jfft)
 with mesh:
     xfft3d_jit = jax.jit(
         xfft3d,
@@ -176,7 +163,6 @@ with mesh:
         out_shardings=sharding,
     )
 
-
 # if n_devices > 1, should be using xfft instead of jfft:
 # my_fftn = jfft.fftn
 # my_ifftn = jfft.ifftn
@@ -184,6 +170,7 @@ my_fftn = xfft3d_jit
 my_ifftn = ixfft3d_jit
 
 
+# Make a distributed meshgrid function
 def xmeshgrid(x_lin):
     xx, yy, zz = jnp.meshgrid(x_lin, x_lin, x_lin, indexing="ij")
     return xx, yy, zz
@@ -256,9 +243,6 @@ def curl(vx, vy, vz, kx, ky, kz):
 
 def curl_spectral(vx_hat, vy_hat, vz_hat, kx, ky, kz):
     """Compute curl in spectral space"""
-    # wx = dvy/dz - dvz/dy
-    # wy = dvz/dx - dvx/dz
-    # wz = dvx/dy - dvy/dx
     wx_hat = 1j * (ky * vz_hat - kz * vy_hat)
     wy_hat = 1j * (kz * vx_hat - kx * vz_hat)
     wz_hat = 1j * (kx * vy_hat - ky * vx_hat)
@@ -465,7 +449,6 @@ def run_simulation_and_save_checkpoints(
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
-    # path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
     path = os.path.join(os.getcwd(), out_folder)
     if jax.process_index() == 0:
         path = ocp.test_utils.erase_and_create_empty(os.getcwd() + "/" + out_folder)
