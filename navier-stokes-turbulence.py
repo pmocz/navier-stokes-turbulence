@@ -322,11 +322,13 @@ def compute_rhs_rk4(vx, vy, vz, vx_hat, vy_hat, vz_hat, nu, kx, ky, kz, kSq, dea
 
 
 @partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
-def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
+def run_simulation_simple(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
     """Run the full Navier-Stokes simulation"""
 
     def update(_, state):
-        (vx, vy, vz) = state
+        vx = state["vx"]
+        vy = state["vy"]
+        vz = state["vz"]
 
         # Advection: rhs = -(v.grad)v
         rhs_x = -(vx * gradi(vx, kx) + vy * gradi(vx, ky) + vz * gradi(vx, kz))
@@ -355,15 +357,17 @@ def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
         vy = diffusion_solve(vy, dt, nu, kSq)
         vz = diffusion_solve(vz, dt, nu, kSq)
 
-        return (vx, vy, vz)
+        state = {"vx": vx, "vy": vy, "vz": vz}
 
-    (vx, vy, vz) = jax.lax.fori_loop(0, Nt, update, (vx, vy, vz))
+        return state
 
-    return vx, vy, vz
+    state = jax.lax.fori_loop(0, Nt, update, state)
+
+    return state
 
 
 @partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
-def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
+def run_simulation_rk4(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
     """Run the full Navier-Stokes simulation using 4th-order Runge-Kutta"""
 
     # RK4 coefficients
@@ -371,7 +375,9 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
     b = jnp.array([0.5, 0.5, 1.0])
 
     def update(_, state):
-        (vx, vy, vz) = state
+        vx = state["vx"]
+        vy = state["vy"]
+        vz = state["vz"]
 
         # Transform to spectral space
         vx_hat = my_fftn(vx)
@@ -437,15 +443,17 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
         vy = jnp.real(my_ifftn(vy_hat))
         vz = jnp.real(my_ifftn(vz_hat))
 
-        return (vx, vy, vz)
+        state = {"vx": vx, "vy": vy, "vz": vz}
 
-    (vx, vy, vz) = jax.lax.fori_loop(0, Nt, update, (vx, vy, vz))
+        return state
 
-    return vx, vy, vz
+    state = jax.lax.fori_loop(0, Nt, update, state)
+
+    return state
 
 
 def run_simulation_and_save_checkpoints(
-    vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias, out_folder
+    state, dt, Nt, nu, kx, ky, kz, kSq, dealias, out_folder
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
@@ -460,13 +468,7 @@ def run_simulation_and_save_checkpoints(
     checkpoint_id = 0
     if jax.process_index() == 0:
         print("saving initial condition")
-    state = {}
-    state["vx"] = vx
-    state["vy"] = vy
-    state["vz"] = vz
-    vx.block_until_ready()
-    vy.block_until_ready()
-    vz.block_until_ready()
+    jax.block_until_ready(state)
     async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
     async_checkpoint_manager.wait_until_finished()
     checkpoint_id += 1
@@ -478,39 +480,31 @@ def run_simulation_and_save_checkpoints(
             print(f"step {i} of {Nt}")
         steps = min(snap_interval, Nt - i)
         if args.rk4:
-            vx, vy, vz = run_simulation_rk4(
-                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, dealias
-            )
+            state = run_simulation_rk4(state, dt, steps, nu, kx, ky, kz, kSq, dealias)
         else:
-            vx, vy, vz = run_simulation_simple(
-                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, dealias
+            state = run_simulation_simple(
+                state, dt, steps, nu, kx, ky, kz, kSq, dealias
             )
         if jax.process_index() == 0:
             print("about to create checkpoint")
-        state["vx"] = vx
-        state["vy"] = vy
-        state["vz"] = vz
-        vx.block_until_ready()
-        vy.block_until_ready()
-        vz.block_until_ready()
-        if jax.process_index() == 0:
-            print("...")
+        jax.block_until_ready(state)
         async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
         async_checkpoint_manager.wait_until_finished()
         if jax.process_index() == 0:
             print("checkpoint saved")
         checkpoint_id += 1
         if jax.process_index() == 0:
+            elapsed = time.time() - time_start
+            remaining = elapsed * (Nt - (i + snap_interval)) / (i + snap_interval)
+            days = int(remaining // 86400)
+            hours = int((remaining % 86400) // 3600)
+            minutes = int((remaining % 3600) // 60)
+            seconds = int(remaining % 60)
             print(
-                "estimated time remaining: {:.2f} minutes".format(
-                    (time.time() - time_start)
-                    * (Nt - (i + snap_interval))
-                    / (i + snap_interval)
-                    / 60.0
-                )
+                f"estimated time remaining: {days:02d}-{hours:02d}:{minutes:02d}:{seconds:02d}"
             )
 
-    return vx, vy, vz
+    return state
 
 
 def main():
@@ -585,14 +579,15 @@ def main():
     # del Ax, Ay, Az  # clear initial condition variables to save memory
 
     # Taylor-Green vortex initial condition
-    vx = jnp.sin(xx) * jnp.cos(yy) * jnp.cos(zz)
-    vy = -jnp.cos(xx) * jnp.sin(yy) * jnp.cos(zz)
-    vz = jnp.zeros_like(vx)
+    state = {}
+    state["vx"] = jnp.sin(xx) * jnp.cos(yy) * jnp.cos(zz)
+    state["vy"] = -jnp.cos(xx) * jnp.sin(yy) * jnp.cos(zz)
+    state["vz"] = jnp.zeros_like(state["vx"])
 
     if jax.process_index() == 0:
         print("vz:")
-        print(f"  Shape: {vz.shape}")
-        print(f"  Sharding: {vz.sharding}")
+        print(f"  Shape: {state['vz'].shape}")
+        print(f"  Sharding: {state['vz'].sharding}")
 
     del xx, yy, zz  # clear meshgrid to save memory
 
@@ -608,9 +603,7 @@ def main():
         print(f"starting simulation with output folder: {out_folder}")
     start_time = time.time()
     state = run_simulation_and_save_checkpoints(
-        vx,
-        vy,
-        vz,
+        state,
         dt,
         Nt,
         nu,
