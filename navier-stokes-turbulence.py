@@ -493,8 +493,12 @@ def run_simulation_and_save_checkpoints(
         vx.block_until_ready()
         vy.block_until_ready()
         vz.block_until_ready()
+        if jax.process_index() == 0:
+            print("...")
         async_checkpoint_manager.save(checkpoint_id, args=ocp.args.StandardSave(state))
         async_checkpoint_manager.wait_until_finished()
+        if jax.process_index() == 0:
+            print("checkpoint saved")
         checkpoint_id += 1
         if jax.process_index() == 0:
             print(
