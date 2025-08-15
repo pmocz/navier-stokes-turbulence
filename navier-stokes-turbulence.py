@@ -179,9 +179,14 @@ def xmeshgrid(x_lin):
 xmeshgrid_jit = jax.jit(xmeshgrid, in_shardings=None, out_shardings=sharding)
 
 
-def poisson_solve(rho, kSq_inv):
+def inv(x):
+    """return inverse of x, or 1 if x is zero"""
+    return 1.0 / (x + (x == 0)) * (x != 0)
+
+
+def poisson_solve(rho, kSq):
     """solve the Poisson equation, given source field rho"""
-    V_hat = -(my_fftn(rho)) * kSq_inv
+    V_hat = -(my_fftn(rho)) * inv(kSq)
     V = jnp.real(my_ifftn(V_hat))
     return V
 
@@ -283,9 +288,7 @@ def apply_dealias(f, dealias):
     return f_filtered
 
 
-def compute_rhs_rk4(
-    vx, vy, vz, vx_hat, vy_hat, vz_hat, nu, kx, ky, kz, kSq, kSq_inv, dealias
-):
+def compute_rhs_rk4(vx, vy, vz, vx_hat, vy_hat, vz_hat, nu, kx, ky, kz, kSq, dealias):
     """Compute right-hand side of Navier-Stokes equations for the RK4 solver"""
 
     # Compute curl in spectral space
@@ -303,9 +306,7 @@ def compute_rhs_rk4(
 
     # Project to enforce incompressibility (pressure correction)
     # P_hat = sum(rhs_hat * k / k^2, axis=0)
-    P_hat = (
-        kx * kSq_inv * rhs_x_hat + ky * kSq_inv * rhs_y_hat + kz * kSq_inv * rhs_z_hat
-    )
+    P_hat = (kx * rhs_x_hat + ky * rhs_y_hat + kz * rhs_z_hat) * inv(kSq)
 
     # Subtract pressure gradient
     rhs_x_hat = rhs_x_hat - kx * P_hat
@@ -321,7 +322,7 @@ def compute_rhs_rk4(
 
 
 @partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
-def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias):
+def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
     """Run the full Navier-Stokes simulation"""
 
     def update(_, state):
@@ -342,7 +343,7 @@ def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, deal
 
         # Poisson solve for pressure
         div_rhs = div(rhs_x, rhs_y, rhs_z, kx, ky, kz)
-        P = poisson_solve(div_rhs, kSq_inv)
+        P = poisson_solve(div_rhs, kSq)
 
         # Correction (to eliminate divergence component of velocity)
         vx -= dt * gradi(P, kx)
@@ -362,7 +363,7 @@ def run_simulation_simple(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, deal
 
 
 @partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
-def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias):
+def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias):
     """Run the full Navier-Stokes simulation using 4th-order Runge-Kutta"""
 
     # RK4 coefficients
@@ -412,7 +413,6 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias
                 ky,
                 kz,
                 kSq,
-                kSq_inv,
                 dealias,
             )
 
@@ -445,7 +445,7 @@ def run_simulation_rk4(vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias
 
 
 def run_simulation_and_save_checkpoints(
-    vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, kSq_inv, dealias, out_folder
+    vx, vy, vz, dt, Nt, nu, kx, ky, kz, kSq, dealias, out_folder
 ):
     """Run the full Navier-Stokes simulation and save 100 checkpoints"""
 
@@ -479,11 +479,11 @@ def run_simulation_and_save_checkpoints(
         steps = min(snap_interval, Nt - i)
         if args.rk4:
             vx, vy, vz = run_simulation_rk4(
-                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
+                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, dealias
             )
         else:
             vx, vy, vz = run_simulation_simple(
-                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, kSq_inv, dealias
+                vx, vy, vz, dt, steps, nu, kx, ky, kz, kSq, dealias
             )
         if jax.process_index() == 0:
             print("about to create checkpoint")
@@ -543,7 +543,9 @@ def main():
     # zz = jax.lax.with_sharding_constraint(zz, sharding)
 
     # Fourier Space Variables
-    k_lin = (2.0 * jnp.pi) / L * jnp.arange(-N / 2, N / 2)
+    # k_lin = (2.0 * jnp.pi) / L * jnp.arange(-N / 2, N / 2)
+    # since box size is 2*pi, make this integers to save memory
+    k_lin = jnp.arange(-N // 2, N // 2, dtype=jnp.int32)
     kmax = jnp.max(k_lin)
     # kx, ky, kz = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
     kx, ky, kz = xmeshgrid_jit(k_lin)
@@ -551,7 +553,6 @@ def main():
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
     kSq = kx**2 + ky**2 + kz**2
-    kSq_inv = 1.0 / (kSq + (kSq == 0)) * (kSq != 0)
     if jax.process_index() == 0:
         print("spectral vars set up")
 
@@ -559,7 +560,6 @@ def main():
     # ky = jax.lax.with_sharding_constraint(ky, sharding)
     # kz = jax.lax.with_sharding_constraint(kz, sharding)
     # kSq = jax.lax.with_sharding_constraint(kSq, sharding)
-    # kSq_inv = jax.lax.with_sharding_constraint(kSq_inv, sharding)
 
     # dealias with the 2/3 rule
     dealias = (
@@ -615,7 +615,6 @@ def main():
         ky,
         kz,
         kSq,
-        kSq_inv,
         dealias,
         out_folder,
     )
