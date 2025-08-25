@@ -12,6 +12,8 @@ from jax.sharding import Mesh, PartitionSpec, NamedSharding
 from typing import Callable
 # import jax.profiler
 
+import jaxdecomp as jd
+
 jax.config.update("jax_enable_x64", True)
 
 
@@ -59,9 +61,12 @@ else:
 
 # Create mesh and sharding for distributed computation
 n_devices = jax.device_count()
-devices = mesh_utils.create_device_mesh((n_devices,))
-mesh = Mesh(devices, axis_names=("gpus",))
-sharding = NamedSharding(mesh, PartitionSpec(None, "gpus"))
+# devices = mesh_utils.create_device_mesh((n_devices,))
+# mesh = Mesh(devices, axis_names=("gpus",))
+# sharding = NamedSharding(mesh, PartitionSpec(None, "gpus"))
+devices = mesh_utils.create_device_mesh((1, n_devices))
+mesh = Mesh(devices, axis_names=("x", "y"))
+sharding = NamedSharding(mesh, PartitionSpec("x", "y"))
 
 if jax.process_index() == 0:
     for env_var in [
@@ -166,8 +171,10 @@ with mesh:
 # if n_devices > 1, should be using xfft instead of jfft:
 # my_fftn = jfft.fftn
 # my_ifftn = jfft.ifftn
-my_fftn = xfft3d_jit
-my_ifftn = ixfft3d_jit
+# my_fftn = xfft3d_jit
+# my_ifftn = ixfft3d_jit
+my_fftn = jd.pfft3d
+my_ifftn = jd.pifft3d
 
 
 # Make a distributed meshgrid function
