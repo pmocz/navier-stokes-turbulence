@@ -28,7 +28,7 @@ with a Spectral method
 
 Example Usage:
 
-python navier-stokes-turbulence.py --res 32 --cpu-only
+python navier-stokes-turbulence.py --res 32 --cpu
 
 """
 
@@ -41,14 +41,14 @@ parser.add_argument(
     help="Enable 4th-order Runge-Kutta time integration (default: False, use backwards Euler by default)",
 )
 parser.add_argument(
-    "--cpu-only",
+    "--cpu",
     action="store_true",
     help="Use CPU only (default: False, use GPU)",
 )
 args = parser.parse_args()
 
 # Setup distributed computing
-if args.cpu_only:
+if args.cpu:
     flags = os.environ.get("XLA_FLAGS", "")
     flags += " --xla_force_host_platform_device_count=1"  # change to, e.g., 8 for testing sharding virtually
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
