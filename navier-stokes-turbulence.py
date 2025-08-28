@@ -50,7 +50,7 @@ args = parser.parse_args()
 # Setup distributed computing
 if args.cpu:
     flags = os.environ.get("XLA_FLAGS", "")
-    flags += " --xla_force_host_platform_device_count=1"  # change to, e.g., 8 for testing sharding virtually
+    flags += " --xla_force_host_platform_device_count=8"  # change to, e.g., 8 for testing sharding virtually
     os.environ["CUDA_VISIBLE_DEVICES"] = ""
     os.environ["XLA_FLAGS"] = flags
     print("Using CPU only mode")
@@ -187,6 +187,19 @@ def xmeshgrid(x_lin):
 
 
 xmeshgrid_jit = jax.jit(xmeshgrid, in_shardings=None, out_shardings=sharding)
+
+
+def xmeshgrid_transpose(x_lin):
+    xx, yy, zz = jnp.meshgrid(x_lin, x_lin, x_lin, indexing="ij")
+    xx = jnp.transpose(xx, (1, 2, 0))
+    yy = jnp.transpose(yy, (1, 2, 0))
+    zz = jnp.transpose(zz, (1, 2, 0))
+    return xx, yy, zz
+
+
+xmeshgrid_transpose_jit = jax.jit(
+    xmeshgrid_transpose, in_shardings=None, out_shardings=sharding
+)
 
 
 def inv(x):
@@ -617,14 +630,10 @@ def main():
     k_lin = jnp.arange(-N // 2, N // 2, dtype=jnp.int32)
     kmax = jnp.max(k_lin)
     # kx, ky, kz = jnp.meshgrid(k_lin, k_lin, k_lin, indexing="ij")
-    kx, ky, kz = xmeshgrid_jit(k_lin)
+    kx, ky, kz = xmeshgrid_transpose_jit(k_lin)
     kx = jfft.ifftshift(kx)
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
-    # transpose kx, ky, kz to account for jaxdecomp pfft3d transposition
-    kx = jnp.transpose(kx, (1, 2, 0))
-    ky = jnp.transpose(ky, (1, 2, 0))
-    kz = jnp.transpose(kz, (1, 2, 0))
     kSq = kx**2 + ky**2 + kz**2
     # kSq_inv = 1.0 / (kSq + (kSq == 0)) * (kSq != 0)
     if jax.process_index() == 0:
