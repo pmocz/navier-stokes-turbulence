@@ -154,19 +154,19 @@ def ixfft3d(x):
 
 
 # set up xfft (distributed version of jfft)
-with mesh:
-    xfft3d_jit = jax.jit(
-        xfft3d,
-        in_shardings=sharding,
-        out_shardings=sharding,
-    )
-
-with mesh:
-    ixfft3d_jit = jax.jit(
-        ixfft3d,
-        in_shardings=sharding,
-        out_shardings=sharding,
-    )
+# with mesh:
+#     xfft3d_jit = jax.jit(
+#         xfft3d,
+#         in_shardings=sharding,
+#         out_shardings=sharding,
+#     )
+#
+# with mesh:
+#     ixfft3d_jit = jax.jit(
+#         ixfft3d,
+#         in_shardings=sharding,
+#         out_shardings=sharding,
+#     )
 
 # if n_devices > 1, should be using xfft instead of jfft:
 # my_fftn = jfft.fftn
