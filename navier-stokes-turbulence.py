@@ -173,8 +173,11 @@ def ixfft3d(x):
 # my_ifftn = jfft.ifftn
 # my_fftn = xfft3d_jit
 # my_ifftn = ixfft3d_jit
-my_fftn = jd.pfft3d
-my_ifftn = jd.pifft3d
+my_fftn = jd.fft.pfft3d
+my_ifftn = jd.fft.pifft3d
+
+# NOTE: jaxdecomp (jd) has pfft3d transpose the axis (X, Y, Z) --> (Y, Z, X), and pifft3d undo it
+# so the fourier space variables (e.g. kx, ky, kz, kSq, dealias) all need to be transposed
 
 
 # Make a distributed meshgrid function
@@ -374,6 +377,67 @@ def run_simulation_simple(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
 
 
 @partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
+def run_simulation_optimized(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
+    """Run the full Navier-Stokes simulation, same as run_simulation_simple but fewer ffts"""
+
+    def update(_, state):
+        vx = state["vx"]
+        vy = state["vy"]
+        vz = state["vz"]
+
+        vx_hat = my_fftn(vx)
+        vy_hat = my_fftn(vy)
+        vz_hat = my_fftn(vz)
+
+        rhs_x = -(
+            vx * jnp.real(my_ifftn(1j * kx * vx_hat))
+            + vy * jnp.real(my_ifftn(1j * ky * vx_hat))
+            + vz * jnp.real(my_ifftn(1j * kz * vx_hat))
+        )
+        rhs_y = -(
+            vx * jnp.real(my_ifftn(1j * kx * vy_hat))
+            + vy * jnp.real(my_ifftn(1j * ky * vy_hat))
+            + vz * jnp.real(my_ifftn(1j * kz * vy_hat))
+        )
+        rhs_z = -(
+            vx * jnp.real(my_ifftn(1j * kx * vz_hat))
+            + vy * jnp.real(my_ifftn(1j * ky * vz_hat))
+            + vz * jnp.real(my_ifftn(1j * kz * vz_hat))
+        )
+
+        # Apply dealiasing to advection terms, in fourier space
+        rhs_x = dealias * my_fftn(rhs_x)
+        rhs_y = dealias * my_fftn(rhs_y)
+        rhs_z = dealias * my_fftn(rhs_z)
+
+        # Compute pressure correction in spectral space
+        P_hat = (kx * rhs_x + ky * rhs_y + kz * rhs_z) * inv(kSq)
+
+        # Subtract pressure gradient from RHS
+        rhs_x += -kx * P_hat
+        rhs_y += -ky * P_hat
+        rhs_z += -kz * P_hat
+
+        # Apply diffusion factor in spectral space
+        vx_hat = (vx_hat + dt * rhs_x) / (1.0 + dt * nu * kSq)
+        vy_hat = (vy_hat + dt * rhs_y) / (1.0 + dt * nu * kSq)
+        vz_hat = (vz_hat + dt * rhs_z) / (1.0 + dt * nu * kSq)
+
+        # Transform back to real space
+        vx = jnp.real(my_ifftn(vx_hat))
+        vy = jnp.real(my_ifftn(vy_hat))
+        vz = jnp.real(my_ifftn(vz_hat))
+
+        state = {"vx": vx, "vy": vy, "vz": vz}
+
+        return state
+
+    state = jax.lax.fori_loop(0, Nt, update, state)
+
+    return state
+
+
+@partial(jax.jit, static_argnames=["dt", "Nt", "nu"])
 def run_simulation_rk4(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
     """Run the full Navier-Stokes simulation using 4th-order Runge-Kutta"""
 
@@ -489,7 +553,7 @@ def run_simulation_and_save_checkpoints(
         if args.rk4:
             state = run_simulation_rk4(state, dt, steps, nu, kx, ky, kz, kSq, dealias)
         else:
-            state = run_simulation_simple(
+            state = run_simulation_optimized(
                 state, dt, steps, nu, kx, ky, kz, kSq, dealias
             )
         if jax.process_index() == 0:
@@ -557,6 +621,10 @@ def main():
     kx = jfft.ifftshift(kx)
     ky = jfft.ifftshift(ky)
     kz = jfft.ifftshift(kz)
+    # transpose kx, ky, kz to account for jaxdecomp pfft3d transposition
+    kx = jnp.transpose(kx, (1, 2, 0))
+    ky = jnp.transpose(ky, (1, 2, 0))
+    kz = jnp.transpose(kz, (1, 2, 0))
     kSq = kx**2 + ky**2 + kz**2
     # kSq_inv = 1.0 / (kSq + (kSq == 0)) * (kSq != 0)
     if jax.process_index() == 0:
