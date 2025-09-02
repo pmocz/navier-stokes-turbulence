@@ -14,7 +14,7 @@ in a 3D periodic box.
 
 ```console
 module purge
-module load python/3.11
+module load python/3.13
 python -m venv --system-site-packages $VENVDIR/navier-stokes-turbulence-venv
 source $VENVDIR/navier-stokes-turbulence-venv/bin/activate
 pip install --upgrade pip
