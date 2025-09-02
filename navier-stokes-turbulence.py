@@ -1,6 +1,7 @@
 import jax
 import jax.numpy as jnp
 import jax.numpy.fft as jfft
+import jaxdecomp as jd
 from functools import partial
 import os
 import argparse
@@ -11,8 +12,6 @@ from jax.experimental.custom_partitioning import custom_partitioning
 from jax.sharding import Mesh, PartitionSpec, NamedSharding
 from typing import Callable
 # import jax.profiler
-
-import jaxdecomp as jd
 
 jax.config.update("jax_enable_x64", True)
 
@@ -35,11 +34,6 @@ python navier-stokes-turbulence.py --res 32 --cpu
 # Setup parameters (user-controlled)
 parser = argparse.ArgumentParser(description="3D Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
-parser.add_argument(
-    "--rk4",
-    action="store_true",
-    help="Enable 4th-order Runge-Kutta time integration (default: False, use backwards Euler by default)",
-)
 parser.add_argument(
     "--cpu",
     action="store_true",
@@ -418,12 +412,12 @@ def run_simulation_optimized(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
             + vz * jnp.real(my_ifftn(1j * kz * vz_hat))
         )
 
-        # Apply dealiasing to advection terms, in fourier space
+        # Convert to fourier space
         rhs_x = dealias * my_fftn(rhs_x)
         rhs_y = dealias * my_fftn(rhs_y)
         rhs_z = dealias * my_fftn(rhs_z)
 
-        # Compute pressure correction in spectral space
+        # Apply dealias, Compute pressure correction in spectral space
         P_hat = (kx * rhs_x + ky * rhs_y + kz * rhs_z) * inv(kSq)
 
         # Subtract pressure gradient from RHS
@@ -431,7 +425,7 @@ def run_simulation_optimized(state, dt, Nt, nu, kx, ky, kz, kSq, dealias):
         rhs_y += -ky * P_hat
         rhs_z += -kz * P_hat
 
-        # Apply diffusion factor in spectral space
+        # Update and apply diffusion factor in spectral space
         vx_hat = (vx_hat + dt * rhs_x) / (1.0 + dt * nu * kSq)
         vy_hat = (vy_hat + dt * rhs_y) / (1.0 + dt * nu * kSq)
         vz_hat = (vz_hat + dt * rhs_z) / (1.0 + dt * nu * kSq)
@@ -563,12 +557,7 @@ def run_simulation_and_save_checkpoints(
         if jax.process_index() == 0:
             print(f"step {i} of {Nt}")
         steps = min(snap_interval, Nt - i)
-        if args.rk4:
-            state = run_simulation_rk4(state, dt, steps, nu, kx, ky, kz, kSq, dealias)
-        else:
-            state = run_simulation_optimized(
-                state, dt, steps, nu, kx, ky, kz, kSq, dealias
-            )
+        state = run_simulation_optimized(state, dt, steps, nu, kx, ky, kz, kSq, dealias)
         if jax.process_index() == 0:
             print("about to create checkpoint")
         jax.block_until_ready(state)
@@ -588,6 +577,9 @@ def run_simulation_and_save_checkpoints(
                 f"estimated time remaining: {days:02d}-{hours:02d}:{minutes:02d}:{seconds:02d}"
             )
 
+    async_checkpoint_manager.wait_until_finished()
+    async_checkpoint_manager.close()
+
     return state
 
 
@@ -602,9 +594,6 @@ def main():
     if jax.process_index() == 0:
         print(
             f"Running 3D Navier-Stokes simulation with N={N}, Nt={Nt}, dt={dt}, nu={nu}"
-        )
-        print(
-            f"using {'4th-order Runge-Kutta' if args.rk4 else 'backwards Euler'} method"
         )
 
     # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
@@ -682,7 +671,7 @@ def main():
     # del div_v
 
     # Run the simulation
-    out_folder = f"checkpoints{N}_rk4" if args.rk4 else f"checkpoints{N}"
+    out_folder = f"checkpoints{N}"
     if jax.process_index() == 0:
         print(f"starting simulation with output folder: {out_folder}")
     start_time = time.time()

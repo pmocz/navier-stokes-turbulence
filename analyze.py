@@ -24,11 +24,6 @@ python analyze.py --res 32
 
 parser = argparse.ArgumentParser(description="Analyze Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
-parser.add_argument(
-    "--rk4",
-    action="store_true",
-    help="Load rk4 checkpoints (default: False)",
-)
 parser.add_argument("--show", action="store_true", help="Show plots interactively")
 args = parser.parse_args()
 
@@ -36,10 +31,7 @@ N = args.res
 num_checkpoints = 100
 skip = 10
 
-path = os.path.join(
-    os.path.dirname(__file__),
-    f"checkpoints{N}_rk4" if args.rk4 else f"checkpoints{N}",
-)
+path = os.path.join(os.path.dirname(__file__), f"checkpoints{N}")
 async_checkpoint_manager = ocp.CheckpointManager(path)
 
 # Fourier Space Variables
