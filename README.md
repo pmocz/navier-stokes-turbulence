@@ -13,12 +13,7 @@ in a 3D periodic box.
 ## Virtual environment
 
 ```console
-module purge
-module load python/3.11
-python -m venv --system-site-packages $VENVDIR/navier-stokes-turbulence-venv
-source $VENVDIR/navier-stokes-turbulence-venv/bin/activate
-pip install --upgrade pip
-pip install -r requirements.txt
+./venv_setup.sh
 ```
 
 
