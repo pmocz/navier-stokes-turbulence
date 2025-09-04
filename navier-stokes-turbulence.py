@@ -577,7 +577,6 @@ def run_simulation_and_save_checkpoints(
                 f"estimated time remaining: {days:02d}-{hours:02d}:{minutes:02d}:{seconds:02d}"
             )
 
-    async_checkpoint_manager.wait_until_finished()
     async_checkpoint_manager.close()
 
     return state
