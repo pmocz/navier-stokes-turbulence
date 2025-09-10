@@ -31,7 +31,7 @@ python navier-stokes-turbulence.py --res 32 --cpu
 
 """
 
-# Setup parameters (user-controlled)
+# Set up parameters (user-controlled)
 parser = argparse.ArgumentParser(description="3D Navier-Stokes Simulation")
 parser.add_argument("--res", type=int, default=64, help="Grid size (default: 64)")
 parser.add_argument(
@@ -41,7 +41,7 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-# Setup distributed computing
+# Set up distributed computing
 if args.cpu:
     flags = os.environ.get("XLA_FLAGS", "")
     flags += " --xla_force_host_platform_device_count=8"  # change to, e.g., 8 for testing sharding virtually
@@ -598,9 +598,9 @@ def main():
     # assert Nt * dt > 10.0, "Run simulation long enough for turbulence to develop!"
 
     # Domain [0,2*pi]^3
-    L = 2.0 * jnp.pi
-    # dx = L / N
-    x_lin = jnp.linspace(0, L, num=N + 1)
+    boxsize = 2.0 * jnp.pi
+    # dx = boxsize / N
+    x_lin = jnp.linspace(0, boxsize, num=N + 1)
     x_lin = x_lin[0:N]
     # xx, yy, zz = jnp.meshgrid(x_lin, x_lin, x_lin, indexing="ij")
     xx, yy, zz = xmeshgrid_jit(x_lin)
@@ -613,7 +613,7 @@ def main():
     # zz = jax.lax.with_sharding_constraint(zz, sharding)
 
     # Fourier Space Variables
-    # k_lin = (2.0 * jnp.pi) / L * jnp.arange(-N / 2, N / 2)
+    # k_lin = (2.0 * jnp.pi) / boxsize * jnp.arange(-N / 2, N / 2)
     # since box size is 2*pi, make this integers to save memory
     k_lin = jnp.arange(-N // 2, N // 2, dtype=jnp.int32)
     kmax = jnp.max(k_lin)

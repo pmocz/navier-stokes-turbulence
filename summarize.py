@@ -61,7 +61,7 @@ def summarize_results(resolutions):
                 k,
                 Pf,
                 label=label,
-                linewidth=0.5 + res / 256.0,
+                linewidth=0.5 + (res / 256.0) ** 0.5,
                 color=color,
                 alpha=np.log2(res) / 11.0,
             )
