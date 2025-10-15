@@ -19,7 +19,7 @@ python analyze_skewers.py
 
 """
 
-resolutions = [32, 64, 128, 256, 512, 1024]
+resolutions = [32, 64, 128, 256, 512]  # , 1024]
 checkpoint_start = 20  # 20
 checkpoint_end = 100
 num_checkpoints = checkpoint_end - checkpoint_start
@@ -153,7 +153,7 @@ def main():
         ref = ps_space_mean[kx > 0][0] * (k_ref / k_ref[0]) ** (-5 / 3)
         plt.loglog(k_ref, ref, "k--", label=r"$k^{-5/3}$")
         plt.legend()
-        plt.ylim(1e-2, 1e1)
+        plt.ylim(1e-2, 1e2)
         plt.xlabel("k")
         plt.ylabel("power spectrum")
         plt.title(f"Spatial Power Spectrum")
@@ -180,7 +180,7 @@ def main():
         ref = ps_time_mean[omega > 0][0] * (omega_ref / omega_ref[0]) ** (-5 / 3)
         plt.loglog(omega_ref, ref, "k--", label=r"$\omega^{-5/3}$")
         plt.legend()
-        plt.ylim(1e-1, 1e2)
+        plt.ylim(1e-2, 1e2)
         plt.xlabel("ω")
         plt.ylabel("power spectrum")
         plt.title(f"Temporal Power Spectrum")
