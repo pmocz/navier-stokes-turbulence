@@ -66,6 +66,20 @@ def main():
         data_all[N] = {"vx": data_vx, "vy": data_vy, "vz": data_vz}
 
     # Make plots
+
+    # vmax is max of absolute value of data_vx, data_vy, data_vz accross all resolutions
+    vmax = 0.0
+    for N in resolutions:
+        if N not in data_all:
+            continue
+        data_vx = data_all[N]["vx"]
+        data_vy = data_all[N]["vy"]
+        data_vz = data_all[N]["vz"]
+        vmax_N = jnp.max(jnp.abs(jnp.concatenate([data_vx, data_vy, data_vz])))
+        if vmax_N > vmax:
+            vmax = vmax_N
+    vmin = -vmax
+
     for N in resolutions:
         if N not in data_all:
             continue
@@ -77,10 +91,6 @@ def main():
             Nt * dt / num_checkpoints
         )
         # x = jnp.arange(N) * (boxsize / N)
-
-        # vmax is max of absolute value of data_vx, data_vy, data_vz
-        vmax = jnp.max(jnp.abs(jnp.concatenate([data_vx, data_vy, data_vz])))
-        vmin = -vmax
 
         plt.figure(figsize=(15, 5))
         plt.suptitle(f"1D skewers at resolution {N}^3")
