@@ -127,7 +127,8 @@ def main():
         plt.savefig(f"checkpoints{N}/skewers.png")
         plt.close()
 
-    # Calculate and plot Spatial and Temporal Power Spectra
+    # Calculate and plot Spatial and Temporal Power Spectra (all resolutions on one plot)
+    plt.figure()
     for N in resolutions:
         if N not in data_all:
             continue
@@ -146,19 +147,27 @@ def main():
         ps_space = (ps_vx_space + ps_vy_space + ps_vz_space) / 3.0
         ps_space_mean = jnp.mean(ps_space, axis=1)
 
-        plt.figure()
         plt.loglog(kx[kx > 0], ps_space_mean[kx > 0], label=f"res={N}^3")
-        # -5/3 reference line
-        k_ref = kx[kx > 0]
+    # -5/3 reference line
+    k_ref = kx[kx > 0]
+    if len(k_ref) > 0:
         ref = ps_space_mean[kx > 0][0] * (k_ref / k_ref[0]) ** (-5 / 3)
         plt.loglog(k_ref, ref, "k--", label=r"$k^{-5/3}$")
-        plt.legend()
-        plt.ylim(1e-2, 1e2)
-        plt.xlabel("k")
-        plt.ylabel("power spectrum")
-        plt.title(f"Spatial Power Spectrum")
-        plt.savefig(f"skewer_pspec_spatial.png")
-        plt.close()
+    plt.legend()
+    plt.ylim(1e-2, 1e2)
+    plt.xlabel("k")
+    plt.ylabel("power spectrum")
+    plt.title(f"Spatial Power Spectrum")
+    plt.savefig(f"skewer_pspec_spatial.png")
+    plt.close()
+
+    plt.figure()
+    for N in resolutions:
+        if N not in data_all:
+            continue
+        data_vx = data_all[N]["vx"]
+        data_vy = data_all[N]["vy"]
+        data_vz = data_all[N]["vz"]
 
         # Temporal Power Spectrum (averaged over space)
         omega = (
@@ -173,19 +182,19 @@ def main():
         ps_time = (ps_vx_time + ps_vy_time + ps_vz_time) / 3.0
         ps_time_mean = jnp.mean(ps_time, axis=0)
 
-        plt.figure()
         plt.loglog(omega[omega > 0], ps_time_mean[omega > 0], label=f"res={N}^3")
-        # -5/3 reference line
-        omega_ref = omega[omega > 0]
+    # -5/3 reference line
+    omega_ref = omega[omega > 0]
+    if len(omega_ref) > 0:
         ref = ps_time_mean[omega > 0][0] * (omega_ref / omega_ref[0]) ** (-5 / 3)
         plt.loglog(omega_ref, ref, "k--", label=r"$\omega^{-5/3}$")
-        plt.legend()
-        plt.ylim(1e-2, 1e2)
-        plt.xlabel("ω")
-        plt.ylabel("power spectrum")
-        plt.title(f"Temporal Power Spectrum")
-        plt.savefig(f"skewer_pspec_temporal.png")
-        plt.close()
+    plt.legend()
+    plt.ylim(1e-2, 1e2)
+    plt.xlabel("ω")
+    plt.ylabel("power spectrum")
+    plt.title(f"Temporal Power Spectrum")
+    plt.savefig(f"skewer_pspec_temporal.png")
+    plt.close()
 
 
 if __name__ == "__main__":
